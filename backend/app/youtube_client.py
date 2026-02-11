@@ -1,0 +1,202 @@
+"""
+YouTube API client with automatic token refresh.
+
+Wraps the YouTube Data API v3 to fetch channel stats and
+recent videos. Handles decryption/re-encryption of OAuth
+tokens and auto-refreshes expired access tokens.
+"""
+
+import logging
+from datetime import datetime, timezone
+import isodate
+
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+from sqlalchemy.orm import Session
+
+from app.config import settings
+from app.models import Creator
+from app.encryption import encrypt_token, decrypt_token
+
+logger = logging.getLogger(__name__)
+
+# ── Internal quota tracker (resets per app restart) ──
+_quota_used = 0
+
+
+def get_quota_used() -> int:
+    """Return the estimated quota units consumed this session."""
+    return _quota_used
+
+
+def _track_quota(units: int) -> None:
+    """Add to the running quota estimate."""
+    global _quota_used
+    _quota_used += units
+
+
+class YouTubeClient:
+    """
+    A YouTube API client bound to a specific Creator's credentials.
+
+    Usage:
+        client = YouTubeClient(creator, db)
+        stats  = client.fetch_channel_stats()
+        videos = client.fetch_recent_videos()
+    """
+
+    def __init__(self, creator: Creator, db: Session):
+        self.creator = creator
+        self.db = db
+        self._youtube = None
+
+    # ── Token management ────────────────────────────
+
+    def _get_credentials(self) -> Credentials:
+        """
+        Decrypt stored tokens, build Credentials, and auto-refresh
+        if the access token has expired. Re-encrypts the new token
+        back into the database.
+        """
+        access_token = decrypt_token(self.creator.access_token)
+        refresh_token = decrypt_token(self.creator.refresh_token)
+
+        creds = Credentials(
+            token=access_token,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=settings.GOOGLE_CLIENT_ID,
+            client_secret=settings.GOOGLE_CLIENT_SECRET,
+        )
+
+        # Set expiry so the library knows if it needs to refresh
+        if self.creator.token_expiry:
+            creds.expiry = self.creator.token_expiry.replace(tzinfo=None)
+
+        # Auto-refresh if expired
+        if creds.expired and creds.refresh_token:
+            logger.info("Access token expired — refreshing for channel %s", self.creator.channel_id)
+            creds.refresh(Request())
+
+            # Re-encrypt and save the new access token
+            self.creator.access_token = encrypt_token(creds.token)
+            self.creator.token_expiry = (
+                creds.expiry.replace(tzinfo=timezone.utc) if creds.expiry else None
+            )
+            self.db.commit()
+            logger.info("Token refreshed and saved for channel %s", self.creator.channel_id)
+
+        return creds
+
+    def _get_youtube(self):
+        """Lazily build and cache the YouTube service client."""
+        if self._youtube is None:
+            creds = self._get_credentials()
+            self._youtube = build("youtube", "v3", credentials=creds)
+        return self._youtube
+
+    # ── API methods ─────────────────────────────────
+
+    def fetch_channel_stats(self) -> dict:
+        """
+        Fetch channel-level statistics (subscribers, total views, video count).
+
+        API cost: ~3 quota units (channels.list)
+        """
+        youtube = self._get_youtube()
+        response = youtube.channels().list(
+            part="snippet,statistics",
+            id=self.creator.channel_id,
+        ).execute()
+        _track_quota(3)
+
+        items = response.get("items", [])
+        if not items:
+            return {"error": "Channel not found"}
+
+        channel = items[0]
+        stats = channel.get("statistics", {})
+
+        return {
+            "channel_id": channel["id"],
+            "title": channel["snippet"]["title"],
+            "subscriber_count": int(stats.get("subscriberCount", 0)),
+            "total_views": int(stats.get("viewCount", 0)),
+            "video_count": int(stats.get("videoCount", 0)),
+        }
+
+    def fetch_recent_videos(self, max_results: int = 5) -> list[dict]:
+        """
+        Fetch the most recent videos for this channel.
+
+        Two API calls:
+        1. search.list → get video IDs (100 quota units)
+        2. videos.list → get full metadata with duration (3 quota units)
+
+        Returns a list of dicts with: youtube_video_id, title,
+        published_at, duration_seconds, thumbnail_url
+        """
+        youtube = self._get_youtube()
+
+        # Step 1: Search for recent uploads
+        search_resp = youtube.search().list(
+            part="id",
+            channelId=self.creator.channel_id,
+            type="video",
+            order="date",
+            maxResults=max_results,
+        ).execute()
+        _track_quota(100)
+
+        video_ids = [
+            item["id"]["videoId"]
+            for item in search_resp.get("items", [])
+            if item["id"].get("videoId")
+        ]
+
+        if not video_ids:
+            logger.warning("No videos found for channel %s", self.creator.channel_id)
+            return []
+
+        # Step 2: Get full video details (duration, etc.)
+        videos_resp = youtube.videos().list(
+            part="snippet,contentDetails,statistics",
+            id=",".join(video_ids),
+        ).execute()
+        _track_quota(3)
+
+        results = []
+        for item in videos_resp.get("items", []):
+            # Parse ISO 8601 duration (e.g., "PT4M13S" → 253 seconds)
+            duration_str = item["contentDetails"].get("duration", "PT0S")
+            try:
+                duration_seconds = int(isodate.parse_duration(duration_str).total_seconds())
+            except Exception:
+                duration_seconds = 0
+
+            # Parse published_at
+            published_str = item["snippet"].get("publishedAt", "")
+            try:
+                published_at = datetime.fromisoformat(published_str.replace("Z", "+00:00"))
+            except Exception:
+                published_at = None
+
+            # Get best thumbnail
+            thumbnails = item["snippet"].get("thumbnails", {})
+            thumbnail_url = (
+                thumbnails.get("maxres", {}).get("url")
+                or thumbnails.get("high", {}).get("url")
+                or thumbnails.get("default", {}).get("url")
+                or ""
+            )
+
+            results.append({
+                "youtube_video_id": item["id"],
+                "title": item["snippet"]["title"],
+                "published_at": published_at,
+                "duration_seconds": duration_seconds,
+                "thumbnail_url": thumbnail_url,
+            })
+
+        return results
