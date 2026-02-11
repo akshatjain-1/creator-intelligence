@@ -1,13 +1,14 @@
 """
 YouTube API client with automatic token refresh.
 
-Wraps the YouTube Data API v3 to fetch channel stats and
-recent videos. Handles decryption/re-encryption of OAuth
-tokens and auto-refreshes expired access tokens.
+Wraps the YouTube Data API v3 and YouTube Analytics API v2
+to fetch channel stats, recent videos, and per-video analytics.
+Handles decryption/re-encryption of OAuth tokens and
+auto-refreshes expired access tokens.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, date, timedelta, timezone
 import isodate
 
 from google.oauth2.credentials import Credentials
@@ -50,6 +51,7 @@ class YouTubeClient:
         self.creator = creator
         self.db = db
         self._youtube = None
+        self._youtube_analytics = None
 
     # ── Token management ────────────────────────────
 
@@ -200,3 +202,99 @@ class YouTubeClient:
             })
 
         return results
+
+    # ── YouTube Analytics API ───────────────────────
+
+    def _get_youtube_analytics(self):
+        """Lazily build and cache the YouTube Analytics API v2 client."""
+        if self._youtube_analytics is None:
+            creds = self._get_credentials()
+            self._youtube_analytics = build(
+                "youtubeAnalytics", "v2", credentials=creds
+            )
+        return self._youtube_analytics
+
+    def fetch_video_analytics(
+        self,
+        youtube_video_id: str,
+        target_date: date | None = None,
+    ) -> dict | None:
+        """
+        Fetch analytics metrics for a specific video on a specific date.
+
+        Uses the YouTube Analytics API v2 (youtubeAnalytics.reports.query).
+
+        Day-delay handling:
+        - If no target_date provided, tries yesterday → 2 days ago → 3 days ago
+        - Returns None if no data is found after all fallback attempts
+
+        API cost: ~1 quota unit per query (Analytics API has separate quota)
+
+        Returns dict with keys matching AnalyticsSnapshot columns:
+            views, watch_time_minutes, average_view_duration,
+            retention_at_30s (approximated from averageViewPercentage), ctr
+        """
+        yt_analytics = self._get_youtube_analytics()
+
+        # Determine dates to try (day-delay fallback)
+        if target_date:
+            dates_to_try = [target_date]
+        else:
+            today = date.today()
+            dates_to_try = [
+                today - timedelta(days=1),  # yesterday
+                today - timedelta(days=2),  # 2 days ago
+                today - timedelta(days=3),  # 3 days ago
+            ]
+
+        for try_date in dates_to_try:
+            date_str = try_date.isoformat()
+
+            try:
+                response = yt_analytics.reports().query(
+                    ids="channel==MINE",
+                    startDate=date_str,
+                    endDate=date_str,
+                    metrics="views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,annotationClickThroughRate",
+                    dimensions="video",
+                    filters=f"video=={youtube_video_id}",
+                ).execute()
+                _track_quota(1)
+            except Exception as e:
+                logger.warning(
+                    "Analytics query failed for video %s on %s: %s",
+                    youtube_video_id, date_str, e,
+                )
+                continue
+
+            rows = response.get("rows", [])
+
+            if rows:
+                # columns: video, views, estimatedMinutesWatched,
+                #          averageViewDuration, averageViewPercentage,
+                #          annotationClickThroughRate
+                row = rows[0]
+                logger.info(
+                    "Analytics found for video %s on %s",
+                    youtube_video_id, date_str,
+                )
+                return {
+                    "snapshot_date": try_date,
+                    "views": int(row[1]),
+                    "watch_time_minutes": int(row[2]),
+                    "average_view_duration": int(row[3]),
+                    "retention_at_30s": round(float(row[4]), 2),  # averageViewPercentage
+                    "ctr": round(float(row[5]), 4),  # annotationClickThroughRate
+                }
+
+            logger.info(
+                "No analytics data for video %s on %s — trying older date",
+                youtube_video_id, date_str,
+            )
+
+        logger.warning(
+            "No analytics data found for video %s after all fallback attempts",
+            youtube_video_id,
+        )
+        return None
+

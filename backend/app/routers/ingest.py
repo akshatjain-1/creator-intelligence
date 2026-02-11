@@ -1,15 +1,16 @@
 """
 Test endpoints for manual ingestion and quota tracking.
 
-GET /test/ingest/{channel_id} → Fetch channel stats + recent videos, save to DB
-GET /test/quota               → Show estimated API quota usage
+GET /test/ingest/{channel_id}     → Fetch channel stats + recent videos, save to DB
+GET /test/analytics/{channel_id}  → Fetch per-video analytics, save to analytics_snapshots
+GET /test/quota                   → Show estimated API quota usage
 """
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Creator, Video
+from app.models import Creator, Video, AnalyticsSnapshot
 from app.youtube_client import YouTubeClient, get_quota_used
 
 router = APIRouter()
@@ -76,6 +77,90 @@ def test_ingest(channel_id: str, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/analytics/{channel_id}", summary="Fetch analytics for all videos of a channel")
+def test_analytics(channel_id: str, db: Session = Depends(get_db)):
+    """
+    Fetch per-video analytics from the YouTube Analytics API and store
+    in the analytics_snapshots hypertable.
+
+    For each video belonging to this channel:
+    1. Call fetch_video_analytics() (with day-delay fallback)
+    2. Upsert into analytics_snapshots (unique on video_id + snapshot_date)
+    """
+    # ── Find the creator ────────────────────────────
+    creator = db.query(Creator).filter(Creator.channel_id == channel_id).first()
+    if not creator:
+        raise HTTPException(status_code=404, detail=f"No creator found with channel_id={channel_id}")
+
+    # ── Get all videos for this channel ─────────────
+    videos = db.query(Video).filter(Video.creator_id == creator.id).all()
+    if not videos:
+        return {
+            "message": f"No videos found for channel {channel_id}. Run /test/ingest first.",
+            "analytics_processed": 0,
+            "quota_used": get_quota_used(),
+        }
+
+    client = YouTubeClient(creator, db)
+
+    # ── Fetch analytics for each video ──────────────
+    results = []
+    for video in videos:
+        analytics = client.fetch_video_analytics(video.youtube_video_id)
+
+        if analytics is None:
+            results.append({
+                "youtube_video_id": video.youtube_video_id,
+                "title": video.title,
+                "action": "no_data",
+            })
+            continue
+
+        # Upsert: check if snapshot already exists for this video + date
+        existing = db.query(AnalyticsSnapshot).filter(
+            AnalyticsSnapshot.video_id == video.id,
+            AnalyticsSnapshot.snapshot_date == analytics["snapshot_date"],
+        ).first()
+
+        if existing:
+            existing.views = analytics["views"]
+            existing.watch_time_minutes = analytics["watch_time_minutes"]
+            existing.average_view_duration = analytics["average_view_duration"]
+            existing.retention_at_30s = analytics["retention_at_30s"]
+            existing.ctr = analytics["ctr"]
+            action = "updated"
+        else:
+            snapshot = AnalyticsSnapshot(
+                video_id=video.id,
+                snapshot_date=analytics["snapshot_date"],
+                views=analytics["views"],
+                watch_time_minutes=analytics["watch_time_minutes"],
+                average_view_duration=analytics["average_view_duration"],
+                retention_at_30s=analytics["retention_at_30s"],
+                ctr=analytics["ctr"],
+            )
+            db.add(snapshot)
+            action = "created"
+
+        results.append({
+            "youtube_video_id": video.youtube_video_id,
+            "title": video.title,
+            "snapshot_date": analytics["snapshot_date"].isoformat(),
+            "views": analytics["views"],
+            "action": action,
+        })
+
+    db.commit()
+
+    return {
+        "message": f"Analytics complete for channel {channel_id}",
+        "analytics_processed": len([r for r in results if r["action"] != "no_data"]),
+        "total_videos": len(videos),
+        "details": results,
+        "quota_used": get_quota_used(),
+    }
+
+
 @router.get("/quota", summary="Check estimated API quota usage")
 def test_quota():
     """Return the estimated YouTube API quota usage for this session."""
@@ -87,3 +172,4 @@ def test_quota():
         "quota_remaining": daily_limit - used,
         "quota_percent": round((used / daily_limit) * 100, 2),
     }
+
