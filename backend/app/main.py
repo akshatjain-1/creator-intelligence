@@ -6,6 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import check_db_connection
+from app.routers.auth import router as auth_router
+from app.routers.ingest import router as ingest_router
 
 app = FastAPI(
     title="Creator Intelligence Engine",
@@ -21,6 +23,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Routers ─────────────────────────────────────────
+app.include_router(auth_router, prefix="/auth", tags=["Auth"])
+app.include_router(ingest_router, prefix="/test", tags=["Test"])
 
 
 # ── Health check ────────────────────────────────────
@@ -38,3 +44,4 @@ def health_check():
 def root():
     """Landing redirect — points to Swagger docs."""
     return {"message": "Creator Intelligence Engine API", "docs": "/docs"}
+
