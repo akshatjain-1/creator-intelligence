@@ -52,6 +52,7 @@ def test_ingest(channel_id: str, db: Session = Depends(get_db)):
             existing.published_at = video_data["published_at"]
             existing.duration_seconds = video_data["duration_seconds"]
             existing.thumbnail_url = video_data["thumbnail_url"]
+            existing.view_count = video_data.get("view_count")
             ingested.append({"video_id": video_data["youtube_video_id"], "action": "updated"})
         else:
             # Insert new row
@@ -62,6 +63,7 @@ def test_ingest(channel_id: str, db: Session = Depends(get_db)):
                 published_at=video_data["published_at"],
                 duration_seconds=video_data["duration_seconds"],
                 thumbnail_url=video_data["thumbnail_url"],
+                view_count=video_data.get("view_count"),
             )
             db.add(new_video)
             ingested.append({"video_id": video_data["youtube_video_id"], "action": "created"})

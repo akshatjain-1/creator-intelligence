@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # ── Encryption (Fernet key for token storage) ───
     FERNET_KEY: str = ""
 
+    # ── Gemini AI ───────────────────────────────────
+    GEMINI_API_KEY: str = ""
+
     # ── OAuth Scopes ────────────────────────────────
     GOOGLE_SCOPES: list[str] = [
         "https://www.googleapis.com/auth/userinfo.email",

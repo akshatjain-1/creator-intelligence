@@ -8,11 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import check_db_connection
 from app.routers.auth import router as auth_router
 from app.routers.ingest import router as ingest_router
+from app.routers.dashboard import router as dashboard_router
 
 app = FastAPI(
     title="Creator Intelligence Engine",
-    description="Decision Engine for YouTube Creators — MVP-1",
-    version="0.1.0",
+    description="Decision Engine for YouTube Creators — Phase 2",
+    version="0.2.0",
 )
 
 # ── CORS (allow Next.js frontend in dev) ────────────
@@ -27,6 +28,7 @@ app.add_middleware(
 # ── Routers ─────────────────────────────────────────
 app.include_router(auth_router, prefix="/auth", tags=["Auth"])
 app.include_router(ingest_router, prefix="/test", tags=["Test"])
+app.include_router(dashboard_router, prefix="/api", tags=["Dashboard"])
 
 
 # ── Health check ────────────────────────────────────

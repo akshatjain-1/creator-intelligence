@@ -193,12 +193,17 @@ class YouTubeClient:
                 or ""
             )
 
+            # Extract view count from statistics
+            stats = item.get("statistics", {})
+            view_count = int(stats.get("viewCount", 0))
+
             results.append({
                 "youtube_video_id": item["id"],
                 "title": item["snippet"]["title"],
                 "published_at": published_at,
                 "duration_seconds": duration_seconds,
                 "thumbnail_url": thumbnail_url,
+                "view_count": view_count,
             })
 
         return results
