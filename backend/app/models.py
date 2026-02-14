@@ -78,6 +78,12 @@ class Video(Base):
     published_at = Column(DateTime(timezone=True), nullable=True)
     duration_seconds = Column(Integer, nullable=True)
     thumbnail_url = Column(String(500), nullable=True)
+    view_count = Column(Integer, nullable=True)          # from Data API statistics
+
+    # Phase 2: Derived metrics (populated by scoring_service)
+    hook_score = Column(Float, nullable=True)           # 0-100, null if no analytics
+    velocity = Column(Float, nullable=True)             # views/hour since publish
+    last_analyzed_at = Column(DateTime(timezone=True), nullable=True)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
