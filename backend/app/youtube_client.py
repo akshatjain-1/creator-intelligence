@@ -128,83 +128,97 @@ class YouTubeClient:
             "video_count": int(stats.get("videoCount", 0)),
         }
 
-    def fetch_recent_videos(self, max_results: int = 5) -> list[dict]:
+    def fetch_recent_videos(self, max_results: int = 0) -> list[dict]:
         """
-        Fetch the most recent videos for this channel.
+        Fetch videos for this channel using the uploads playlist.
 
-        Two API calls:
-        1. search.list → get video IDs (100 quota units)
-        2. videos.list → get full metadata with duration (3 quota units)
+        Uses playlistItems.list (1 quota unit/call) instead of search.list
+        (100 quota units/call) for reliable, complete results.
 
-        Returns a list of dicts with: youtube_video_id, title,
-        published_at, duration_seconds, thumbnail_url
+        Args:
+            max_results: Maximum videos to fetch. 0 = ALL videos (default).
         """
         youtube = self._get_youtube()
 
-        # Step 1: Search for recent uploads
-        search_resp = youtube.search().list(
-            part="id",
-            channelId=self.creator.channel_id,
-            type="video",
-            order="date",
-            maxResults=max_results,
-        ).execute()
-        _track_quota(100)
+        # Derive uploads playlist ID: UC... → UU...
+        uploads_playlist_id = "UU" + self.creator.channel_id[2:]
 
-        video_ids = [
-            item["id"]["videoId"]
-            for item in search_resp.get("items", [])
-            if item["id"].get("videoId")
-        ]
+        # Step 1: Get all video IDs from the uploads playlist
+        all_video_ids = []
+        page_token = None
+        target = max_results if max_results > 0 else 10000  # practical max
 
-        if not video_ids:
+        while len(all_video_ids) < target:
+            page_size = min(50, target - len(all_video_ids))
+            playlist_resp = youtube.playlistItems().list(
+                part="contentDetails",
+                playlistId=uploads_playlist_id,
+                maxResults=page_size,
+                pageToken=page_token,
+            ).execute()
+            _track_quota(1)  # playlistItems.list = 1 quota unit
+
+            video_ids = [
+                item["contentDetails"]["videoId"]
+                for item in playlist_resp.get("items", [])
+                if item.get("contentDetails", {}).get("videoId")
+            ]
+            all_video_ids.extend(video_ids)
+
+            page_token = playlist_resp.get("nextPageToken")
+            if not page_token or not video_ids:
+                break  # No more pages
+
+        if not all_video_ids:
             logger.warning("No videos found for channel %s", self.creator.channel_id)
             return []
 
-        # Step 2: Get full video details (duration, etc.)
-        videos_resp = youtube.videos().list(
-            part="snippet,contentDetails,statistics",
-            id=",".join(video_ids),
-        ).execute()
-        _track_quota(3)
-
+        # Step 2: Get full video details in batches of 50
         results = []
-        for item in videos_resp.get("items", []):
-            # Parse ISO 8601 duration (e.g., "PT4M13S" → 253 seconds)
-            duration_str = item["contentDetails"].get("duration", "PT0S")
-            try:
-                duration_seconds = int(isodate.parse_duration(duration_str).total_seconds())
-            except Exception:
-                duration_seconds = 0
+        for i in range(0, len(all_video_ids), 50):
+            batch = all_video_ids[i:i+50]
+            videos_resp = youtube.videos().list(
+                part="snippet,contentDetails,statistics",
+                id=",".join(batch),
+            ).execute()
+            _track_quota(3)
 
-            # Parse published_at
-            published_str = item["snippet"].get("publishedAt", "")
-            try:
-                published_at = datetime.fromisoformat(published_str.replace("Z", "+00:00"))
-            except Exception:
-                published_at = None
+            for item in videos_resp.get("items", []):
+                # Parse ISO 8601 duration (e.g., "PT4M13S" → 253 seconds)
+                duration_str = item["contentDetails"].get("duration", "PT0S")
+                try:
+                    duration_seconds = int(isodate.parse_duration(duration_str).total_seconds())
+                except Exception:
+                    duration_seconds = 0
 
-            # Get best thumbnail
-            thumbnails = item["snippet"].get("thumbnails", {})
-            thumbnail_url = (
-                thumbnails.get("maxres", {}).get("url")
-                or thumbnails.get("high", {}).get("url")
-                or thumbnails.get("default", {}).get("url")
-                or ""
-            )
+                # Parse published_at
+                published_str = item["snippet"].get("publishedAt", "")
+                try:
+                    published_at = datetime.fromisoformat(published_str.replace("Z", "+00:00"))
+                except Exception:
+                    published_at = None
 
-            # Extract view count from statistics
-            stats = item.get("statistics", {})
-            view_count = int(stats.get("viewCount", 0))
+                # Get best thumbnail
+                thumbnails = item["snippet"].get("thumbnails", {})
+                thumbnail_url = (
+                    thumbnails.get("maxres", {}).get("url")
+                    or thumbnails.get("high", {}).get("url")
+                    or thumbnails.get("default", {}).get("url")
+                    or ""
+                )
 
-            results.append({
-                "youtube_video_id": item["id"],
-                "title": item["snippet"]["title"],
-                "published_at": published_at,
-                "duration_seconds": duration_seconds,
-                "thumbnail_url": thumbnail_url,
-                "view_count": view_count,
-            })
+                # Extract view count from statistics
+                stats = item.get("statistics", {})
+                view_count = int(stats.get("viewCount", 0))
+
+                results.append({
+                    "youtube_video_id": item["id"],
+                    "title": item["snippet"]["title"],
+                    "published_at": published_at,
+                    "duration_seconds": duration_seconds,
+                    "thumbnail_url": thumbnail_url,
+                    "view_count": view_count,
+                })
 
         return results
 

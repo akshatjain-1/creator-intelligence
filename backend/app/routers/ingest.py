@@ -24,7 +24,7 @@ def test_ingest(channel_id: str, db: Session = Depends(get_db)):
     Steps:
     1. Look up the Creator in the database
     2. Fetch channel statistics
-    3. Fetch latest 5 videos and upsert into the videos table
+    3. Fetch ALL videos and upsert into the videos table
     """
     # ── Find the creator ────────────────────────────
     creator = db.query(Creator).filter(Creator.channel_id == channel_id).first()
@@ -37,7 +37,7 @@ def test_ingest(channel_id: str, db: Session = Depends(get_db)):
     channel_stats = client.fetch_channel_stats()
 
     # ── Fetch recent videos ─────────────────────────
-    recent_videos = client.fetch_recent_videos(max_results=5)
+    recent_videos = client.fetch_recent_videos(max_results=0)  # 0 = all videos
 
     # ── Upsert videos into DB ───────────────────────
     ingested = []

@@ -48,17 +48,8 @@ def dashboard_stats(db: Session = Depends(get_db)):
     hook_scores = [v.hook_score for v in videos if v.hook_score is not None]
     velocities = [v.velocity for v in videos if v.velocity is not None]
 
-    # Total views from latest analytics snapshots
-    total_views = 0
-    for video in videos:
-        latest = (
-            db.query(AnalyticsSnapshot)
-            .filter(AnalyticsSnapshot.video_id == video.id)
-            .order_by(AnalyticsSnapshot.snapshot_date.desc())
-            .first()
-        )
-        if latest and latest.views:
-            total_views += latest.views
+    # Total views from video.view_count (from Data API)
+    total_views = sum(v.view_count or 0 for v in videos)
 
     avg_hook = round(sum(hook_scores) / len(hook_scores), 1) if hook_scores else None
     avg_velocity = round(sum(velocities) / len(velocities), 2) if velocities else None
