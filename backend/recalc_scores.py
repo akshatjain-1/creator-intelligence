@@ -35,9 +35,9 @@ def main():
             print(f"  [{r['youtube_video_id']}] {r['title'][:40]}")
             print(f"    Hook Score: {hook}  |  Velocity: {vel}")
 
-            if r["baseline_hook"] is not None:
+            if r["baseline_hook"] is not None and r["hook_delta"] is not None:
                 print(f"    Baseline Hook: {r['baseline_hook']:.1f}  (Δ {r['hook_delta']:+.1f}%)")
-            if r["baseline_velocity"] is not None:
+            if r["baseline_velocity"] is not None and r["velocity_delta"] is not None:
                 print(f"    Baseline Vel:  {r['baseline_velocity']:.2f}  (Δ {r['velocity_delta']:+.1f}%)")
             print()
 

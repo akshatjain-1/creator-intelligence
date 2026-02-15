@@ -108,7 +108,9 @@ def test_analytics(channel_id: str, db: Session = Depends(get_db)):
     # ── Fetch analytics for each video ──────────────
     results = []
     for video in videos:
-        analytics = client.fetch_video_analytics(video.youtube_video_id)
+        # Pass published_at so analytics queries from video's publish date
+        pub_date = video.published_at.date() if video.published_at else None
+        analytics = client.fetch_video_analytics(video.youtube_video_id, published_at=pub_date)
 
         if analytics is None:
             results.append({
