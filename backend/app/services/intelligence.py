@@ -5,19 +5,19 @@ Translates pre-calculated metrics into human-readable advice.
 This is NOT an AI analysis tool — it's a synthesis layer.
 The math is already done by scoring_service.py.
 
-Integration: Google Gemini 1.5 Flash
+Integration: Google Gemini 2.0 Flash via google-genai SDK
 Prompt Strategy: Context injection (feed calculations, not raw data)
 """
 
 import logging
-import google.generativeai as genai
+from google import genai
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# ── Configure Gemini ────────────────────────────
-genai.configure(api_key=settings.GEMINI_API_KEY)
+# ── Configure Gemini client ────────────────────────────
+client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 SYSTEM_INSTRUCTION = """You are a YouTube Strategist. You receive structured performance metrics. Your job is to write a **single, brutal, actionable sentence** for the creator.
 
@@ -68,18 +68,21 @@ def generate_insight(
 
     # ── Call Gemini ─────────────────────────────────
     try:
-        model = genai.GenerativeModel(
-            "gemini-1.5-flash",
-            system_instruction=SYSTEM_INSTRUCTION,
-        )
-
         prompt = f"""Analyze this video's performance and give one actionable insight:
 
 {_format_payload(payload)}
 
 Write your response as a single, direct sentence addressed to the creator."""
 
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                temperature=0.7,
+                max_output_tokens=150,
+            ),
+        )
         insight = response.text.strip()
 
         logger.info("Gemini insight generated for '%s'", video_title)

@@ -236,16 +236,15 @@ class YouTubeClient:
     def fetch_video_analytics(
         self,
         youtube_video_id: str,
-        target_date: date | None = None,
+        published_at: date | None = None,
     ) -> dict | None:
         """
-        Fetch analytics metrics for a specific video on a specific date.
+        Fetch aggregated analytics metrics for a specific video.
 
         Uses the YouTube Analytics API v2 (youtubeAnalytics.reports.query).
 
-        Day-delay handling:
-        - If no target_date provided, tries yesterday → 2 days ago → 3 days ago
-        - Returns None if no data is found after all fallback attempts
+        Queries from video's publish date to yesterday for cumulative metrics.
+        If no published_at provided, defaults to 90 days ago.
 
         API cost: ~1 quota unit per query (Analytics API has separate quota)
 
@@ -255,65 +254,65 @@ class YouTubeClient:
         """
         yt_analytics = self._get_youtube_analytics()
 
-        # Determine dates to try (day-delay fallback)
-        if target_date:
-            dates_to_try = [target_date]
+        # Determine date range
+        yesterday = date.today() - timedelta(days=1)
+
+        if published_at:
+            start_date = published_at
         else:
-            today = date.today()
-            dates_to_try = [
-                today - timedelta(days=1),  # yesterday
-                today - timedelta(days=2),  # 2 days ago
-                today - timedelta(days=3),  # 3 days ago
-            ]
+            start_date = yesterday - timedelta(days=90)  # default fallback
 
-        for try_date in dates_to_try:
-            date_str = try_date.isoformat()
-
-            try:
-                response = yt_analytics.reports().query(
-                    ids="channel==MINE",
-                    startDate=date_str,
-                    endDate=date_str,
-                    metrics="views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,annotationClickThroughRate",
-                    dimensions="video",
-                    filters=f"video=={youtube_video_id}",
-                ).execute()
-                _track_quota(1)
-            except Exception as e:
-                logger.warning(
-                    "Analytics query failed for video %s on %s: %s",
-                    youtube_video_id, date_str, e,
-                )
-                continue
-
-            rows = response.get("rows", [])
-
-            if rows:
-                # columns: video, views, estimatedMinutesWatched,
-                #          averageViewDuration, averageViewPercentage,
-                #          annotationClickThroughRate
-                row = rows[0]
-                logger.info(
-                    "Analytics found for video %s on %s",
-                    youtube_video_id, date_str,
-                )
-                return {
-                    "snapshot_date": try_date,
-                    "views": int(row[1]),
-                    "watch_time_minutes": int(row[2]),
-                    "average_view_duration": int(row[3]),
-                    "retention_at_30s": round(float(row[4]), 2),  # averageViewPercentage
-                    "ctr": round(float(row[5]), 4),  # annotationClickThroughRate
-                }
-
+        # Don't query if video is too new (published today/yesterday)
+        if start_date >= yesterday:
             logger.info(
-                "No analytics data for video %s on %s — trying older date",
-                youtube_video_id, date_str,
+                "Video %s too new for analytics (published %s)",
+                youtube_video_id, start_date,
             )
+            return None
+
+        start_str = start_date.isoformat()
+        end_str = yesterday.isoformat()
+
+        try:
+            response = yt_analytics.reports().query(
+                ids="channel==MINE",
+                startDate=start_str,
+                endDate=end_str,
+                metrics="views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,annotationClickThroughRate",
+                dimensions="video",
+                filters=f"video=={youtube_video_id}",
+            ).execute()
+            _track_quota(1)
+        except Exception as e:
+            logger.warning(
+                "Analytics query failed for video %s (%s to %s): %s",
+                youtube_video_id, start_str, end_str, e,
+            )
+            return None
+
+        rows = response.get("rows", [])
+
+        if rows:
+            # columns: video, views, estimatedMinutesWatched,
+            #          averageViewDuration, averageViewPercentage,
+            #          annotationClickThroughRate
+            row = rows[0]
+            logger.info(
+                "Analytics found for video %s (%s to %s): %d views",
+                youtube_video_id, start_str, end_str, int(row[1]),
+            )
+            return {
+                "snapshot_date": yesterday,
+                "views": int(row[1]),
+                "watch_time_minutes": int(row[2]),
+                "average_view_duration": int(row[3]),
+                "retention_at_30s": round(float(row[4]), 2),  # averageViewPercentage
+                "ctr": round(float(row[5]), 4),  # annotationClickThroughRate
+            }
 
         logger.warning(
-            "No analytics data found for video %s after all fallback attempts",
-            youtube_video_id,
+            "No analytics data found for video %s (%s to %s)",
+            youtube_video_id, start_str, end_str,
         )
         return None
 
