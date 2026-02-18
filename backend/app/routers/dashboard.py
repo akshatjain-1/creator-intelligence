@@ -44,21 +44,48 @@ def dashboard_stats(db: Session = Depends(get_db)):
             "video_count": 0,
         }
 
-    # Aggregate stats
+    # Sort videos by publish date (newest first)
+    sorted_videos = sorted(videos, key=lambda v: v.published_at or datetime.min, reverse=True)
+
+    # Calculate Aggregates
     hook_scores = [v.hook_score for v in videos if v.hook_score is not None]
     velocities = [v.velocity for v in videos if v.velocity is not None]
-
-    # Total views from video.view_count (from Data API)
+    
     total_views = sum(v.view_count or 0 for v in videos)
-
     avg_hook = round(sum(hook_scores) / len(hook_scores), 1) if hook_scores else None
     avg_velocity = round(sum(velocities) / len(velocities), 2) if velocities else None
+
+    # Calculate Deltas (Last 5 vs Previous 5)
+    recent_5 = sorted_videos[:5]
+    prev_5 = sorted_videos[5:10]
+
+    def get_avg(objs, attr):
+        vals = [getattr(o, attr) for o in objs if getattr(o, attr) is not None]
+        return sum(vals) / len(vals) if vals else 0
+
+    avg_views_current = get_avg(recent_5, 'view_count')
+    avg_views_prev = get_avg(prev_5, 'view_count')
+    
+    avg_hook_current = get_avg(recent_5, 'hook_score')
+    avg_hook_prev = get_avg(prev_5, 'hook_score')
+    
+    avg_vel_current = get_avg(recent_5, 'velocity')
+    avg_vel_prev = get_avg(prev_5, 'velocity')
+
+    def calc_delta(curr, prev):
+        if not prev: return None
+        return round(((curr - prev) / prev) * 100, 1)
 
     return {
         "total_views": total_views,
         "avg_hook_score": avg_hook,
         "avg_velocity": avg_velocity,
         "video_count": len(videos),
+        "deltas": {
+            "views": calc_delta(avg_views_current, avg_views_prev),
+            "hook": calc_delta(avg_hook_current, avg_hook_prev),
+            "velocity": calc_delta(avg_vel_current, avg_vel_prev),
+        }
     }
 
 

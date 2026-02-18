@@ -27,7 +27,7 @@ app.add_middleware(
 
 # ── Routers ─────────────────────────────────────────
 app.include_router(auth_router, prefix="/auth", tags=["Auth"])
-app.include_router(ingest_router, prefix="/test", tags=["Test"])
+app.include_router(ingest_router, prefix="/api/ingest", tags=["Ingest"])
 app.include_router(dashboard_router, prefix="/api", tags=["Dashboard"])
 
 

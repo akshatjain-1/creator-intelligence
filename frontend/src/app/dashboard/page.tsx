@@ -1,11 +1,13 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { RefreshCw } from "lucide-react"
 import { StatsCards } from "@/components/dashboard/stats-cards"
 import { PulseWidget } from "@/components/dashboard/pulse-widget"
 import { VideoTable } from "@/components/dashboard/video-table"
 import { InsightDrawer } from "@/components/dashboard/insight-drawer"
-import { fetchDashboardStats, fetchVideos, analyzeVideo } from "@/lib/api"
+import { fetchDashboardStats, fetchVideos, analyzeVideo, syncData } from "@/lib/api"
+import { cn } from "@/lib/utils"
 
 export default function DashboardPage() {
     const [stats, setStats] = useState<any>(null)
@@ -17,21 +19,37 @@ export default function DashboardPage() {
     const [analysisResult, setAnalysisResult] = useState<any>(null)
     const [selectedVideo, setSelectedVideo] = useState<any>(null)
 
-    useEffect(() => {
-        async function loadData() {
-            try {
-                const [statsData, videosData] = await Promise.all([
-                    fetchDashboardStats(),
-                    fetchVideos(),
-                ])
-                setStats(statsData)
-                setVideos(videosData.videos)
-            } catch (error) {
-                console.error("Failed to load dashboard data", error)
-            }
+    // Sync state
+    const [isSyncing, setIsSyncing] = useState(false)
+
+    async function loadData() {
+        try {
+            const [statsData, videosData] = await Promise.all([
+                fetchDashboardStats(),
+                fetchVideos(),
+            ])
+            setStats(statsData)
+            setVideos(videosData.videos)
+        } catch (error) {
+            console.error("Failed to load dashboard data", error)
         }
+    }
+
+    useEffect(() => {
         loadData()
     }, [])
+
+    const handleSync = async () => {
+        setIsSyncing(true)
+        try {
+            await syncData()
+            await loadData()
+        } catch (error) {
+            console.error("Sync failed", error)
+        } finally {
+            setIsSyncing(false)
+        }
+    }
 
     const handleAnalyze = async (video: any) => {
         setSelectedVideo(video)
@@ -59,11 +77,21 @@ export default function DashboardPage() {
 
     return (
         <div className="space-y-8 max-w-7xl mx-auto pb-20">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-                <p className="text-muted-foreground mt-2">
-                    Your channel performance at a glance.
-                </p>
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+                    <p className="text-muted-foreground mt-2">
+                        Your channel performance at a glance.
+                    </p>
+                </div>
+                <button
+                    onClick={handleSync}
+                    disabled={isSyncing}
+                    className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                >
+                    <RefreshCw className={cn("h-4 w-4", isSyncing && "animate-spin")} />
+                    {isSyncing ? "Syncing..." : "Sync Now"}
+                </button>
             </div>
 
             <StatsCards stats={stats} />

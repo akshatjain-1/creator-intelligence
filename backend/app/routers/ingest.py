@@ -16,154 +16,123 @@ from app.youtube_client import YouTubeClient, get_quota_used
 router = APIRouter()
 
 
+@router.post("/sync", summary="Trigger full data sync for all creators")
+def sync_all_creators(db: Session = Depends(get_db)):
+    try:
+        creators = db.query(Creator).all()
+        results = []
+
+        for creator in creators:
+            res = _sync_creator(creator, db)
+            results.append(res)
+        
+        return {
+            "message": "Sync complete",
+            "creators_processed": len(results),
+            "details": results
+        }
+    except Exception as e:
+        import traceback
+        return {"critical_error": str(e), "traceback": traceback.format_exc()}
+
+def _sync_creator(creator: Creator, db: Session):
+    try:
+        from app.services.scoring_service import score_video  # Lazy import to avoid circular dep
+        
+        if not creator:
+            return {"error": "Creator not found"}
+            
+        client = YouTubeClient(creator, db)
+        
+        # 1. Channel Stats
+        stats = client.fetch_channel_stats()
+        
+        # 2. Videos
+        recent_videos = client.fetch_recent_videos(max_results=0)
+        video_updates = 0
+        new_videos = 0
+
+        for video_data in recent_videos:
+            existing = db.query(Video).filter(
+                Video.youtube_video_id == video_data["youtube_video_id"]
+            ).first()
+
+            if existing:
+                existing.title = video_data["title"]
+                existing.published_at = video_data["published_at"]
+                existing.duration_seconds = video_data["duration_seconds"]
+                existing.thumbnail_url = video_data["thumbnail_url"]
+                existing.view_count = video_data.get("view_count")
+                video_updates += 1
+                video_obj = existing
+            else:
+                new_video = Video(
+                    creator_id=creator.id,
+                    youtube_video_id=video_data["youtube_video_id"],
+                    title=video_data["title"],
+                    published_at=video_data["published_at"],
+                    duration_seconds=video_data["duration_seconds"],
+                    thumbnail_url=video_data["thumbnail_url"],
+                    view_count=video_data.get("view_count"),
+                )
+                db.add(new_video)
+                db.flush() # get ID
+                new_videos += 1
+                video_obj = new_video
+
+            # 3. Analytics & Scoring (Immediate)
+            pub_date = video_obj.published_at.date() if video_obj.published_at else None
+            analytics = client.fetch_video_analytics(video_obj.youtube_video_id, published_at=pub_date)
+
+            if analytics:
+                existing_snap = db.query(AnalyticsSnapshot).filter(
+                    AnalyticsSnapshot.video_id == video_obj.id,
+                    AnalyticsSnapshot.snapshot_date == analytics["snapshot_date"],
+                ).first()
+
+                if existing_snap:
+                    existing_snap.views = analytics["views"]
+                    existing_snap.watch_time_minutes = analytics["watch_time_minutes"]
+                    existing_snap.average_view_duration = analytics["average_view_duration"]
+                    existing_snap.retention_at_30s = analytics["retention_at_30s"]
+                    existing_snap.ctr = analytics["ctr"]
+                else:
+                    snapshot = AnalyticsSnapshot(
+                        video_id=video_obj.id,
+                        snapshot_date=analytics["snapshot_date"],
+                        views=analytics["views"],
+                        watch_time_minutes=analytics["watch_time_minutes"],
+                        average_view_duration=analytics["average_view_duration"],
+                        retention_at_30s=analytics["retention_at_30s"],
+                        ctr=analytics["ctr"],
+                    )
+                    db.add(snapshot)
+                
+                # 4. Score
+                db.commit() # Commit snapshots before scoring
+                score_video(video_obj, db)
+
+        db.commit()
+        return {
+            "channel_id": creator.channel_id,
+            "new_videos": new_videos,
+            "updated_videos": video_updates,
+            "quota_used": get_quota_used()
+        }
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
 @router.get("/ingest/{channel_id}", summary="Trigger manual ingestion for a channel")
 def test_ingest(channel_id: str, db: Session = Depends(get_db)):
-    """
-    Manually triggers the data ingestion pipeline for a specific channel.
+    # ... (keep existing for reference/testing if needed, or deprecate)
+    # For now, I'll keep it but redirect logic if desired. 
+    # But since this is a user request for "Sync", the above POST /sync is the key.
+    return _sync_creator(db.query(Creator).filter(Creator.channel_id == channel_id).first(), db)
 
-    Steps:
-    1. Look up the Creator in the database
-    2. Fetch channel statistics
-    3. Fetch ALL videos and upsert into the videos table
-    """
-    # ── Find the creator ────────────────────────────
-    creator = db.query(Creator).filter(Creator.channel_id == channel_id).first()
-    if not creator:
-        raise HTTPException(status_code=404, detail=f"No creator found with channel_id={channel_id}")
-
-    client = YouTubeClient(creator, db)
-
-    # ── Fetch channel stats ─────────────────────────
-    channel_stats = client.fetch_channel_stats()
-
-    # ── Fetch recent videos ─────────────────────────
-    recent_videos = client.fetch_recent_videos(max_results=0)  # 0 = all videos
-
-    # ── Upsert videos into DB ───────────────────────
-    ingested = []
-    for video_data in recent_videos:
-        existing = db.query(Video).filter(
-            Video.youtube_video_id == video_data["youtube_video_id"]
-        ).first()
-
-        if existing:
-            # Update existing row (MVP-1 "Duplicate Test" — no new rows)
-            existing.title = video_data["title"]
-            existing.published_at = video_data["published_at"]
-            existing.duration_seconds = video_data["duration_seconds"]
-            existing.thumbnail_url = video_data["thumbnail_url"]
-            existing.view_count = video_data.get("view_count")
-            ingested.append({"video_id": video_data["youtube_video_id"], "action": "updated"})
-        else:
-            # Insert new row
-            new_video = Video(
-                creator_id=creator.id,
-                youtube_video_id=video_data["youtube_video_id"],
-                title=video_data["title"],
-                published_at=video_data["published_at"],
-                duration_seconds=video_data["duration_seconds"],
-                thumbnail_url=video_data["thumbnail_url"],
-                view_count=video_data.get("view_count"),
-            )
-            db.add(new_video)
-            ingested.append({"video_id": video_data["youtube_video_id"], "action": "created"})
-
-    db.commit()
-
-    return {
-        "message": f"Ingestion complete for channel {channel_id}",
-        "channel_stats": channel_stats,
-        "videos_processed": len(ingested),
-        "details": ingested,
-        "quota_used": get_quota_used(),
-    }
-
-
-@router.get("/analytics/{channel_id}", summary="Fetch analytics for all videos of a channel")
+@router.get("/analytics/{channel_id}")
 def test_analytics(channel_id: str, db: Session = Depends(get_db)):
-    """
-    Fetch per-video analytics from the YouTube Analytics API and store
-    in the analytics_snapshots hypertable.
-
-    For each video belonging to this channel:
-    1. Call fetch_video_analytics() (with day-delay fallback)
-    2. Upsert into analytics_snapshots (unique on video_id + snapshot_date)
-    """
-    # ── Find the creator ────────────────────────────
-    creator = db.query(Creator).filter(Creator.channel_id == channel_id).first()
-    if not creator:
-        raise HTTPException(status_code=404, detail=f"No creator found with channel_id={channel_id}")
-
-    # ── Get all videos for this channel ─────────────
-    videos = db.query(Video).filter(Video.creator_id == creator.id).all()
-    if not videos:
-        return {
-            "message": f"No videos found for channel {channel_id}. Run /test/ingest first.",
-            "analytics_processed": 0,
-            "quota_used": get_quota_used(),
-        }
-
-    client = YouTubeClient(creator, db)
-
-    # ── Fetch analytics for each video ──────────────
-    results = []
-    for video in videos:
-        # Pass published_at so analytics queries from video's publish date
-        pub_date = video.published_at.date() if video.published_at else None
-        analytics = client.fetch_video_analytics(video.youtube_video_id, published_at=pub_date)
-
-        if analytics is None:
-            results.append({
-                "youtube_video_id": video.youtube_video_id,
-                "title": video.title,
-                "action": "no_data",
-            })
-            continue
-
-        # Upsert: check if snapshot already exists for this video + date
-        existing = db.query(AnalyticsSnapshot).filter(
-            AnalyticsSnapshot.video_id == video.id,
-            AnalyticsSnapshot.snapshot_date == analytics["snapshot_date"],
-        ).first()
-
-        if existing:
-            existing.views = analytics["views"]
-            existing.watch_time_minutes = analytics["watch_time_minutes"]
-            existing.average_view_duration = analytics["average_view_duration"]
-            existing.retention_at_30s = analytics["retention_at_30s"]
-            existing.ctr = analytics["ctr"]
-            action = "updated"
-        else:
-            snapshot = AnalyticsSnapshot(
-                video_id=video.id,
-                snapshot_date=analytics["snapshot_date"],
-                views=analytics["views"],
-                watch_time_minutes=analytics["watch_time_minutes"],
-                average_view_duration=analytics["average_view_duration"],
-                retention_at_30s=analytics["retention_at_30s"],
-                ctr=analytics["ctr"],
-            )
-            db.add(snapshot)
-            action = "created"
-
-        results.append({
-            "youtube_video_id": video.youtube_video_id,
-            "title": video.title,
-            "snapshot_date": analytics["snapshot_date"].isoformat(),
-            "views": analytics["views"],
-            "action": action,
-        })
-
-    db.commit()
-
-    return {
-        "message": f"Analytics complete for channel {channel_id}",
-        "analytics_processed": len([r for r in results if r["action"] != "no_data"]),
-        "total_videos": len(videos),
-        "details": results,
-        "quota_used": get_quota_used(),
-    }
-
+    return {"message": "Use POST /api/ingest/sync instead"}
 
 @router.get("/quota", summary="Check estimated API quota usage")
 def test_quota():

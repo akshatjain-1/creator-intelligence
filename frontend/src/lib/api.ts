@@ -19,3 +19,11 @@ export async function analyzeVideo(videoId: string) {
     if (!res.ok) throw new Error("Failed to analyze video")
     return res.json()
 }
+
+export async function syncData() {
+    const res = await fetch(`${API_URL}/ingest/sync`, {
+        method: "POST",
+    })
+    if (!res.ok) throw new Error("Failed to sync data")
+    return res.json()
+}
