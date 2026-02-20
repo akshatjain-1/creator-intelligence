@@ -19,7 +19,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # ── Import our models so autogenerate picks them up ─
-from app.models import Creator, Video, AnalyticsSnapshot  # noqa: F401
+from app.models import User, YouTubeChannel, Video, AnalyticsSnapshot  # noqa: F401
 from app.database import Base
 
 target_metadata = Base.metadata

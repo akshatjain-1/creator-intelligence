@@ -1,7 +1,7 @@
 """
-SQLAlchemy ORM models for the 3 core tables.
+SQLAlchemy ORM models — Phase 2.5 Multi-Tenant Schema.
 
-Schema follows the PRD §6 — Data Schema Specifications.
+Hierarchy:  User  →  YouTubeChannel  →  Video  →  AnalyticsSnapshot
 """
 
 import uuid
@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Integer,
     Float,
+    Boolean,
     DateTime,
     Date,
     Text,
@@ -26,26 +27,60 @@ from sqlalchemy.sql import func
 from app.database import Base
 
 
-class Creator(Base):
+# ── Identity ────────────────────────────────────────
+
+
+class User(Base):
     """
-    A YouTube channel owner who has authenticated with the app.
-    Tokens are stored as Fernet-encrypted strings.
+    A human who logs in via Firebase Authentication.
+    This is the top-level tenant — all data branches from here.
     """
 
-    __tablename__ = "creators"
+    __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    channel_id = Column(String(64), nullable=False, unique=True, index=True)
+    firebase_uid = Column(String(128), nullable=False, unique=True, index=True)
     email = Column(String(255), nullable=True)
-    channel_title = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    channels = relationship(
+        "YouTubeChannel", back_populates="user", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<User firebase_uid={self.firebase_uid}>"
+
+
+# ── Platform Integration ────────────────────────────
+
+
+class YouTubeChannel(Base):
+    """
+    A YouTube channel connected by a User.
+    One User can own many channels (1-to-Many).
+    Tokens are Fernet-encrypted at rest.
+    """
+
+    __tablename__ = "youtube_channels"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    youtube_channel_id = Column(String(64), nullable=False, unique=True, index=True)
+    channel_name = Column(String(255), nullable=True)
+    channel_avatar_url = Column(String(500), nullable=True)
 
     # Encrypted OAuth tokens
     access_token = Column(Text, nullable=True)
     refresh_token = Column(Text, nullable=True)
     token_expiry = Column(DateTime(timezone=True), nullable=True)
 
-    # Ingestion scheduling
-    next_analytics_sync = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -54,35 +89,40 @@ class Creator(Base):
     )
 
     # Relationships
-    videos = relationship("Video", back_populates="creator", cascade="all, delete-orphan")
+    user = relationship("User", back_populates="channels")
+    videos = relationship(
+        "Video", back_populates="channel", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
-        return f"<Creator channel_id={self.channel_id}>"
+        return f"<YouTubeChannel {self.youtube_channel_id}>"
+
+
+# ── Content ─────────────────────────────────────────
 
 
 class Video(Base):
-    """
-    A single YouTube video's metadata.
-    """
+    """A single YouTube video's metadata and derived scores."""
 
     __tablename__ = "videos"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    creator_id = Column(
+    channel_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("creators.id", ondelete="CASCADE"),
+        ForeignKey("youtube_channels.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     youtube_video_id = Column(String(32), nullable=False, unique=True)
     title = Column(String(500), nullable=False)
     published_at = Column(DateTime(timezone=True), nullable=True)
     duration_seconds = Column(Integer, nullable=True)
     thumbnail_url = Column(String(500), nullable=True)
-    view_count = Column(Integer, nullable=True)          # from Data API statistics
+    view_count = Column(Integer, nullable=True)
 
-    # Phase 2: Derived metrics (populated by scoring_service)
-    hook_score = Column(Float, nullable=True)           # 0-100, null if no analytics
-    velocity = Column(Float, nullable=True)             # views/hour since publish
+    # Derived metrics (populated by scoring_service)
+    hook_score = Column(Float, nullable=True)
+    velocity = Column(Float, nullable=True)
     last_analyzed_at = Column(DateTime(timezone=True), nullable=True)
 
     # Timestamps
@@ -92,7 +132,7 @@ class Video(Base):
     )
 
     # Relationships
-    creator = relationship("Creator", back_populates="videos")
+    channel = relationship("YouTubeChannel", back_populates="videos")
     analytics_snapshots = relationship(
         "AnalyticsSnapshot", back_populates="video", cascade="all, delete-orphan"
     )
@@ -101,16 +141,11 @@ class Video(Base):
         return f"<Video youtube_id={self.youtube_video_id}>"
 
 
+# ── Analytics ───────────────────────────────────────
+
+
 class AnalyticsSnapshot(Base):
-    """
-    Time-series analytics data for a video on a specific date.
-
-    This table is converted to a TimescaleDB hypertable (partitioned on
-    snapshot_date) via the Alembic migration for efficient time-range queries.
-
-    NOTE: Composite PK (id, snapshot_date) is required by TimescaleDB — the
-    partitioning column must be part of the primary key.
-    """
+    """Time-series analytics data for a video on a specific date."""
 
     __tablename__ = "analytics_snapshots"
     __table_args__ = (

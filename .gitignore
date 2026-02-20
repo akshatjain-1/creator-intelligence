@@ -4,3 +4,6 @@ venv/
 client_secret.json
 *.pyc
 .DS_Store
+firebase-service-account.json
+.env.local
+.env.production

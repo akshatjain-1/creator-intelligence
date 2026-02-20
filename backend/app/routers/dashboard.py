@@ -1,5 +1,8 @@
 """
-Dashboard API endpoints (Phase 2).
+Dashboard API endpoints (Phase 2.5 — Multi-Tenant).
+
+All endpoints require Firebase JWT and channel_id query param.
+Data is strictly scoped to the authenticated user's channels.
 
 GET  /api/dashboard/stats         → Aggregated channel metrics
 GET  /api/videos                  → List of videos with scores
@@ -9,32 +12,58 @@ POST /api/videos/{id}/analyze     → Trigger Gemini insight for one video
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func as sqlfunc
 
 from app.database import get_db
-from app.models import Creator, Video, AnalyticsSnapshot
+from app.models import User, YouTubeChannel, Video, AnalyticsSnapshot
 from app.services.scoring_service import score_video, calculate_baseline
 from app.services.intelligence import generate_insight
+from app.dependencies import get_current_user
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-@router.get("/dashboard/stats", summary="Aggregated channel statistics")
-def dashboard_stats(db: Session = Depends(get_db)):
-    """
-    Returns aggregated stats across all videos for the dashboard header.
+# ── Helpers ─────────────────────────────────────────
 
-    - Total views (sum of latest snapshots)
-    - Average Hook Score
-    - Average Velocity
-    - Total video count
-    """
-    # Get all videos that have scores
-    videos = db.query(Video).all()
+
+def _get_owned_channel(
+    channel_id: str,
+    current_user: User,
+    db: Session,
+) -> YouTubeChannel:
+    """Fetch a channel and verify the current user owns it."""
+    channel = (
+        db.query(YouTubeChannel)
+        .filter(
+            YouTubeChannel.youtube_channel_id == channel_id,
+            YouTubeChannel.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not channel:
+        raise HTTPException(
+            status_code=403,
+            detail="Unauthorized access to channel",
+        )
+    return channel
+
+
+# ── Endpoints ───────────────────────────────────────
+
+
+@router.get("/dashboard/stats", summary="Aggregated channel statistics")
+def dashboard_stats(
+    channel_id: str = Query(..., description="YouTube channel ID to scope stats"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Returns aggregated stats for videos of a specific channel."""
+    channel = _get_owned_channel(channel_id, current_user, db)
+
+    videos = db.query(Video).filter(Video.channel_id == channel.id).all()
 
     if not videos:
         return {
@@ -42,41 +71,64 @@ def dashboard_stats(db: Session = Depends(get_db)):
             "avg_hook_score": None,
             "avg_velocity": None,
             "video_count": 0,
+            "deltas": {"views": None, "hook": None, "velocity": None},
         }
 
-    # Aggregate stats
+    sorted_videos = sorted(
+        videos, key=lambda v: v.published_at or datetime.min, reverse=True
+    )
+
     hook_scores = [v.hook_score for v in videos if v.hook_score is not None]
     velocities = [v.velocity for v in videos if v.velocity is not None]
 
-    # Total views from video.view_count (from Data API)
     total_views = sum(v.view_count or 0 for v in videos)
-
     avg_hook = round(sum(hook_scores) / len(hook_scores), 1) if hook_scores else None
     avg_velocity = round(sum(velocities) / len(velocities), 2) if velocities else None
+
+    # Deltas: last 5 vs previous 5
+    recent_5 = sorted_videos[:5]
+    prev_5 = sorted_videos[5:10]
+
+    def get_avg(objs, attr):
+        vals = [getattr(o, attr) for o in objs if getattr(o, attr) is not None]
+        return sum(vals) / len(vals) if vals else 0
+
+    def calc_delta(curr, prev):
+        if not prev:
+            return None
+        return round(((curr - prev) / prev) * 100, 1)
 
     return {
         "total_views": total_views,
         "avg_hook_score": avg_hook,
         "avg_velocity": avg_velocity,
         "video_count": len(videos),
+        "deltas": {
+            "views": calc_delta(get_avg(recent_5, "view_count"), get_avg(prev_5, "view_count")),
+            "hook": calc_delta(get_avg(recent_5, "hook_score"), get_avg(prev_5, "hook_score")),
+            "velocity": calc_delta(get_avg(recent_5, "velocity"), get_avg(prev_5, "velocity")),
+        },
     }
 
 
 @router.get("/videos", summary="List all videos with calculated scores")
-def list_videos(db: Session = Depends(get_db)):
-    """
-    Returns all videos with their derived metrics.
-    Includes Hook Score color coding thresholds:
-      Red < 40, Yellow < 60, Green >= 60
-    """
-    videos = db.query(Video).order_by(Video.published_at.desc()).all()
+def list_videos(
+    channel_id: str = Query(..., description="YouTube channel ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Returns all videos for a specific channel with derived metrics."""
+    channel = _get_owned_channel(channel_id, current_user, db)
+
+    videos = (
+        db.query(Video)
+        .filter(Video.channel_id == channel.id)
+        .order_by(Video.published_at.desc())
+        .all()
+    )
 
     result = []
     for video in videos:
-        # Use view_count from Video model (from Data API, always fresh)
-        views = video.view_count
-
-        # Color code the hook score
         hook_color = None
         if video.hook_score is not None:
             if video.hook_score < 40:
@@ -86,7 +138,6 @@ def list_videos(db: Session = Depends(get_db)):
             else:
                 hook_color = "green"
 
-        # Get baseline delta
         baseline = calculate_baseline(video, db)
 
         result.append({
@@ -96,7 +147,7 @@ def list_videos(db: Session = Depends(get_db)):
             "thumbnail_url": video.thumbnail_url,
             "published_at": video.published_at.isoformat() if video.published_at else None,
             "duration_seconds": video.duration_seconds,
-            "views": views,
+            "views": video.view_count,
             "hook_score": video.hook_score,
             "hook_color": hook_color,
             "velocity": video.velocity,
@@ -109,25 +160,32 @@ def list_videos(db: Session = Depends(get_db)):
 
 
 @router.post("/videos/{video_id}/analyze", summary="Generate AI insight for a video")
-def analyze_video(video_id: str, db: Session = Depends(get_db)):
-    """
-    Triggers the Gemini intelligence service for a specific video.
-
-    1. Recalculate scores (ensure fresh data)
-    2. Build context payload with channel averages
-    3. Call Gemini for actionable insight
-    """
-    # Find the video
+def analyze_video(
+    video_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Triggers Gemini insight — scoped to videos the user owns."""
     video = db.query(Video).filter(Video.id == video_id).first()
     if not video:
         raise HTTPException(status_code=404, detail=f"Video not found: {video_id}")
 
-    # Recalculate scores to ensure freshness
+    # Verify ownership through the channel
+    channel = (
+        db.query(YouTubeChannel)
+        .filter(
+            YouTubeChannel.id == video.channel_id,
+            YouTubeChannel.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not channel:
+        raise HTTPException(status_code=403, detail="Unauthorized access to video")
+
     score_result = score_video(video, db)
 
-    # Get channel averages for context
     all_videos = db.query(Video).filter(
-        Video.creator_id == video.creator_id,
+        Video.channel_id == video.channel_id,
         Video.hook_score.isnot(None),
     ).all()
 
@@ -140,7 +198,6 @@ def analyze_video(video_id: str, db: Session = Depends(get_db)):
         channel_avg_hook = round(sum(hooks) / len(hooks), 1) if hooks else None
         channel_avg_velocity = round(sum(vels) / len(vels), 2) if vels else None
 
-    # Generate AI insight
     insight = generate_insight(
         video_title=video.title,
         hook_score=video.hook_score,
@@ -149,7 +206,6 @@ def analyze_video(video_id: str, db: Session = Depends(get_db)):
         channel_avg_velocity=channel_avg_velocity,
     )
 
-    # Update last_analyzed_at
     video.last_analyzed_at = datetime.now(timezone.utc)
     db.commit()
 

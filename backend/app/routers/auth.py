@@ -1,33 +1,34 @@
 """
-OAuth 2.0 authentication endpoints.
+OAuth 2.0 authentication endpoints — Phase 2.5.
 
-GET /auth/login    → Redirect to Google consent screen
-GET /auth/callback → Exchange code for tokens, store encrypted in DB
+GET  /auth/login     → Redirect to Google consent screen (requires Firebase JWT)
+GET  /auth/callback  → Exchange code for tokens, upsert into youtube_channels
+GET  /auth/channels  → List channels owned by the current user
 """
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import timezone
 
-# Google always adds `openid` scope to responses that include userinfo.email.
-# Without this, oauthlib rejects the token because the scopes "changed".
 os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
 
 from app.config import settings
 from app.database import get_db
-from app.models import Creator
+from app.models import User, YouTubeChannel
 from app.encryption import encrypt_token
+from app.dependencies import get_current_user
 
 router = APIRouter()
 
+
 # ── Helpers ─────────────────────────────────────────
+
 
 def _build_flow() -> Flow:
     """Create a Google OAuth Flow from our client secret file."""
@@ -49,32 +50,32 @@ def _build_flow() -> Flow:
 
 # ── Endpoints ───────────────────────────────────────
 
+
 @router.get("/login", summary="Redirect to Google OAuth consent screen")
-def auth_login():
+def auth_login(current_user: User = Depends(get_current_user)):
     """
-    Build the Google OAuth authorization URL and redirect the user
-    to the consent screen. Requests offline access so we get a
-    refresh_token for long-lived API access.
+    Requires Firebase JWT. Stores user's firebase_uid in OAuth state
+    so the callback can link the channel to the correct user.
     """
     flow = _build_flow()
     auth_url, _ = flow.authorization_url(
-        access_type="offline",       # gives us a refresh_token
-        prompt="consent",            # always show consent to guarantee refresh_token
+        access_type="offline",
+        prompt="consent",
         include_granted_scopes="true",
+        state=current_user.firebase_uid,  # Pass user identity through OAuth state
     )
     return RedirectResponse(url=auth_url)
 
 
 @router.get("/callback", summary="Handle OAuth callback from Google")
-def auth_callback(code: str, db: Session = Depends(get_db)):
+def auth_callback(code: str, state: str = "", db: Session = Depends(get_db)):
     """
-    Google redirects here with ?code=... after user consents.
+    Google redirects here with ?code=...&state=firebase_uid.
 
-    Steps:
-    1. Exchange the authorization code for access + refresh tokens
-    2. Fetch the user's YouTube channel info
-    3. Fetch the user's email
-    4. Encrypt tokens and upsert into the creators table
+    1. Exchange code for tokens.
+    2. Fetch YouTube channel info.
+    3. Resolve user from state (firebase_uid).
+    4. Upsert into youtube_channels linked to the user.
     """
     # ── Step 1: Exchange code for tokens ────────────
     flow = _build_flow()
@@ -89,8 +90,7 @@ def auth_callback(code: str, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=400,
             detail=(
-                "No refresh_token received. This usually means consent was "
-                "not prompted. Try revoking app access at "
+                "No refresh_token received. Try revoking app access at "
                 "https://myaccount.google.com/permissions and retry."
             ),
         )
@@ -98,61 +98,95 @@ def auth_callback(code: str, db: Session = Depends(get_db)):
     # ── Step 2: Fetch YouTube channel info ──────────
     youtube = build("youtube", "v3", credentials=credentials)
     try:
-        channel_resp = youtube.channels().list(part="snippet", mine=True).execute()
+        channel_resp = youtube.channels().list(
+            part="snippet", mine=True
+        ).execute()
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"YouTube API error: {e}")
 
     channels = channel_resp.get("items", [])
     if not channels:
-        raise HTTPException(status_code=404, detail="No YouTube channel found for this account.")
+        raise HTTPException(
+            status_code=404,
+            detail="No YouTube channel found for this account.",
+        )
 
-    channel = channels[0]
-    channel_id = channel["id"]
-    channel_title = channel["snippet"]["title"]
+    yt_channel = channels[0]
+    yt_channel_id = yt_channel["id"]
+    channel_name = yt_channel["snippet"]["title"]
+    channel_avatar = yt_channel["snippet"]["thumbnails"]["default"]["url"]
 
-    # ── Step 3: Fetch email from userinfo ───────────
-    from googleapiclient.discovery import build as build_service
-    oauth2 = build_service("oauth2", "v2", credentials=credentials)
-    try:
-        user_info = oauth2.userinfo().get().execute()
-    except Exception:
-        user_info = {}
-    email = user_info.get("email", "")
+    # ── Step 3: Resolve user from state ─────────────
+    if not state:
+        raise HTTPException(status_code=400, detail="Missing state (firebase_uid)")
 
-    # ── Step 4: Encrypt tokens & upsert creator ─────
+    user = db.query(User).filter(User.firebase_uid == state).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found for this Firebase UID")
+
+    # ── Step 4: Encrypt tokens & upsert channel ─────
     encrypted_access = encrypt_token(credentials.token)
     encrypted_refresh = encrypt_token(credentials.refresh_token)
-    token_expiry = credentials.expiry.replace(tzinfo=timezone.utc) if credentials.expiry else None
+    token_expiry = (
+        credentials.expiry.replace(tzinfo=timezone.utc) if credentials.expiry else None
+    )
 
-    # Check if creator already exists (by channel_id)
-    existing = db.query(Creator).filter(Creator.channel_id == channel_id).first()
+    existing = (
+        db.query(YouTubeChannel)
+        .filter(YouTubeChannel.youtube_channel_id == yt_channel_id)
+        .first()
+    )
 
     if existing:
+        # Verify ownership — prevent hijacking
+        if existing.user_id != user.id:
+            raise HTTPException(
+                status_code=409,
+                detail="This channel is already linked to a different account.",
+            )
         existing.access_token = encrypted_access
         existing.refresh_token = encrypted_refresh
         existing.token_expiry = token_expiry
-        existing.email = email
-        existing.channel_title = channel_title
-        creator = existing
+        existing.channel_name = channel_name
+        existing.channel_avatar_url = channel_avatar
+        channel_obj = existing
     else:
-        creator = Creator(
-            channel_id=channel_id,
-            channel_title=channel_title,
-            email=email,
+        channel_obj = YouTubeChannel(
+            user_id=user.id,
+            youtube_channel_id=yt_channel_id,
+            channel_name=channel_name,
+            channel_avatar_url=channel_avatar,
             access_token=encrypted_access,
             refresh_token=encrypted_refresh,
             token_expiry=token_expiry,
         )
-        db.add(creator)
+        db.add(channel_obj)
 
     db.commit()
-    db.refresh(creator)
+    db.refresh(channel_obj)
 
-    return {
-        "message": "Authentication successful!",
-        "creator_id": str(creator.id),
-        "channel_id": channel_id,
-        "channel_title": channel_title,
-        "email": email,
-        "token_expiry": token_expiry.isoformat() if token_expiry else None,
-    }
+    # Redirect to frontend dashboard after successful connection
+    return RedirectResponse(url="http://localhost:3000/dashboard")
+
+
+@router.get("/channels", summary="List YouTube channels for the current user")
+def list_channels(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return all YouTube channels owned by the authenticated user."""
+    channels = (
+        db.query(YouTubeChannel)
+        .filter(YouTubeChannel.user_id == current_user.id)
+        .all()
+    )
+    return [
+        {
+            "id": str(ch.id),
+            "youtube_channel_id": ch.youtube_channel_id,
+            "channel_name": ch.channel_name,
+            "channel_avatar_url": ch.channel_avatar_url,
+            "is_active": ch.is_active,
+        }
+        for ch in channels
+    ]
