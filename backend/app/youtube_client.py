@@ -17,7 +17,7 @@ from googleapiclient.discovery import build
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Creator
+from app.models import YouTubeChannel
 from app.encryption import encrypt_token, decrypt_token
 
 logger = logging.getLogger(__name__)
@@ -39,16 +39,16 @@ def _track_quota(units: int) -> None:
 
 class YouTubeClient:
     """
-    A YouTube API client bound to a specific Creator's credentials.
+    A YouTube API client bound to a specific YouTubeChannel's credentials.
 
     Usage:
-        client = YouTubeClient(creator, db)
+        client = YouTubeClient(channel, db)
         stats  = client.fetch_channel_stats()
         videos = client.fetch_recent_videos()
     """
 
-    def __init__(self, creator: Creator, db: Session):
-        self.creator = creator
+    def __init__(self, channel: YouTubeChannel, db: Session):
+        self.channel = channel
         self.db = db
         self._youtube = None
         self._youtube_analytics = None
@@ -61,8 +61,8 @@ class YouTubeClient:
         if the access token has expired. Re-encrypts the new token
         back into the database.
         """
-        access_token = decrypt_token(self.creator.access_token)
-        refresh_token = decrypt_token(self.creator.refresh_token)
+        access_token = decrypt_token(self.channel.access_token)
+        refresh_token = decrypt_token(self.channel.refresh_token)
 
         creds = Credentials(
             token=access_token,
@@ -73,21 +73,21 @@ class YouTubeClient:
         )
 
         # Set expiry so the library knows if it needs to refresh
-        if self.creator.token_expiry:
-            creds.expiry = self.creator.token_expiry.replace(tzinfo=None)
+        if self.channel.token_expiry:
+            creds.expiry = self.channel.token_expiry.replace(tzinfo=None)
 
         # Auto-refresh if expired
         if creds.expired and creds.refresh_token:
-            logger.info("Access token expired — refreshing for channel %s", self.creator.channel_id)
+            logger.info("Access token expired — refreshing for channel %s", self.channel.youtube_channel_id)
             creds.refresh(Request())
 
             # Re-encrypt and save the new access token
-            self.creator.access_token = encrypt_token(creds.token)
-            self.creator.token_expiry = (
+            self.channel.access_token = encrypt_token(creds.token)
+            self.channel.token_expiry = (
                 creds.expiry.replace(tzinfo=timezone.utc) if creds.expiry else None
             )
             self.db.commit()
-            logger.info("Token refreshed and saved for channel %s", self.creator.channel_id)
+            logger.info("Token refreshed and saved for channel %s", self.channel.youtube_channel_id)
 
         return creds
 
@@ -109,7 +109,7 @@ class YouTubeClient:
         youtube = self._get_youtube()
         response = youtube.channels().list(
             part="snippet,statistics",
-            id=self.creator.channel_id,
+            id=self.channel.youtube_channel_id,
         ).execute()
         _track_quota(3)
 
@@ -141,7 +141,7 @@ class YouTubeClient:
         youtube = self._get_youtube()
 
         # Derive uploads playlist ID: UC... → UU...
-        uploads_playlist_id = "UU" + self.creator.channel_id[2:]
+        uploads_playlist_id = "UU" + self.channel.youtube_channel_id[2:]
 
         # Step 1: Get all video IDs from the uploads playlist
         all_video_ids = []
@@ -170,7 +170,7 @@ class YouTubeClient:
                 break  # No more pages
 
         if not all_video_ids:
-            logger.warning("No videos found for channel %s", self.creator.channel_id)
+            logger.warning("No videos found for channel %s", self.channel.youtube_channel_id)
             return []
 
         # Step 2: Get full video details in batches of 50

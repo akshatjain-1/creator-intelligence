@@ -38,6 +38,9 @@ class Settings(BaseSettings):
         "https://www.googleapis.com/auth/yt-analytics.readonly",
     ]
 
+    # ── Firebase ────────────────────────────────────
+    FIREBASE_SERVICE_ACCOUNT_PATH: str = "firebase-service-account.json"
+
 
 # Singleton instance — import this everywhere
 settings = Settings()

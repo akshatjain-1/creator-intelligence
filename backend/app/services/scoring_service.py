@@ -106,11 +106,11 @@ def calculate_baseline(
         baseline_hook, baseline_velocity,
         hook_delta, velocity_delta
     """
-    # Get last 10 videos for this creator, excluding current video
+    # Get last 10 videos for this channel, excluding current video
     recent_videos = (
         db.query(Video)
         .filter(
-            Video.creator_id == video.creator_id,
+            Video.channel_id == video.channel_id,
             Video.id != video.id,
             Video.hook_score.isnot(None),
         )

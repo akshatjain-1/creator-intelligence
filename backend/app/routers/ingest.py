@@ -1,52 +1,69 @@
 """
-Test endpoints for manual ingestion and quota tracking.
+Ingestion and sync endpoints (Phase 2.5 — Multi-Tenant).
 
-GET /test/ingest/{channel_id}     → Fetch channel stats + recent videos, save to DB
-GET /test/analytics/{channel_id}  → Fetch per-video analytics, save to analytics_snapshots
-GET /test/quota                   → Show estimated API quota usage
+POST /api/ingest/sync    → Sync all channels for the current user
+GET  /api/ingest/quota   → Show estimated API quota usage
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Creator, Video, AnalyticsSnapshot
+from app.models import User, YouTubeChannel, Video, AnalyticsSnapshot
 from app.youtube_client import YouTubeClient, get_quota_used
+from app.dependencies import get_current_user
 
 router = APIRouter()
 
 
-@router.post("/sync", summary="Trigger full data sync for all creators")
-def sync_all_creators(db: Session = Depends(get_db)):
+@router.post("/sync", summary="Trigger full data sync for current user's channels")
+def sync_all_channels(
+    channel_id: str = Query(None, description="Optional: sync a specific channel only"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Sync YouTube data for channels owned by the authenticated user.
+    If channel_id is provided, only that channel is synced.
+    """
     try:
-        creators = db.query(Creator).all()
-        results = []
+        query = db.query(YouTubeChannel).filter(
+            YouTubeChannel.user_id == current_user.id,
+            YouTubeChannel.is_active == True,
+        )
+        if channel_id:
+            query = query.filter(YouTubeChannel.youtube_channel_id == channel_id)
 
-        for creator in creators:
-            res = _sync_creator(creator, db)
+        channels = query.all()
+
+        if not channels:
+            return {"message": "No channels found", "channels_processed": 0, "details": []}
+
+        results = []
+        for channel in channels:
+            res = _sync_channel(channel, db)
             results.append(res)
-        
+
         return {
             "message": "Sync complete",
-            "creators_processed": len(results),
-            "details": results
+            "channels_processed": len(results),
+            "details": results,
         }
     except Exception as e:
         import traceback
         return {"critical_error": str(e), "traceback": traceback.format_exc()}
 
-def _sync_creator(creator: Creator, db: Session):
+
+def _sync_channel(channel: YouTubeChannel, db: Session):
+    """Sync a single channel: stats → videos → analytics → scores."""
     try:
-        from app.services.scoring_service import score_video  # Lazy import to avoid circular dep
-        
-        if not creator:
-            return {"error": "Creator not found"}
-            
-        client = YouTubeClient(creator, db)
-        
+        from app.services.scoring_service import score_video
+
+        client = YouTubeClient(channel, db)
+
         # 1. Channel Stats
         stats = client.fetch_channel_stats()
-        
+
         # 2. Videos
         recent_videos = client.fetch_recent_videos(max_results=0)
         video_updates = 0
@@ -67,7 +84,7 @@ def _sync_creator(creator: Creator, db: Session):
                 video_obj = existing
             else:
                 new_video = Video(
-                    creator_id=creator.id,
+                    channel_id=channel.id,
                     youtube_video_id=video_data["youtube_video_id"],
                     title=video_data["title"],
                     published_at=video_data["published_at"],
@@ -76,13 +93,15 @@ def _sync_creator(creator: Creator, db: Session):
                     view_count=video_data.get("view_count"),
                 )
                 db.add(new_video)
-                db.flush() # get ID
+                db.flush()
                 new_videos += 1
                 video_obj = new_video
 
-            # 3. Analytics & Scoring (Immediate)
+            # 3. Analytics
             pub_date = video_obj.published_at.date() if video_obj.published_at else None
-            analytics = client.fetch_video_analytics(video_obj.youtube_video_id, published_at=pub_date)
+            analytics = client.fetch_video_analytics(
+                video_obj.youtube_video_id, published_at=pub_date
+            )
 
             if analytics:
                 existing_snap = db.query(AnalyticsSnapshot).filter(
@@ -107,35 +126,25 @@ def _sync_creator(creator: Creator, db: Session):
                         ctr=analytics["ctr"],
                     )
                     db.add(snapshot)
-                
-                # 4. Score
-                db.commit() # Commit snapshots before scoring
+
+                db.commit()
                 score_video(video_obj, db)
 
         db.commit()
         return {
-            "channel_id": creator.channel_id,
+            "channel_id": channel.youtube_channel_id,
+            "channel_name": channel.channel_name,
             "new_videos": new_videos,
             "updated_videos": video_updates,
-            "quota_used": get_quota_used()
+            "quota_used": get_quota_used(),
         }
     except Exception as e:
         import traceback
         return {"error": str(e), "traceback": traceback.format_exc()}
 
-@router.get("/ingest/{channel_id}", summary="Trigger manual ingestion for a channel")
-def test_ingest(channel_id: str, db: Session = Depends(get_db)):
-    # ... (keep existing for reference/testing if needed, or deprecate)
-    # For now, I'll keep it but redirect logic if desired. 
-    # But since this is a user request for "Sync", the above POST /sync is the key.
-    return _sync_creator(db.query(Creator).filter(Creator.channel_id == channel_id).first(), db)
-
-@router.get("/analytics/{channel_id}")
-def test_analytics(channel_id: str, db: Session = Depends(get_db)):
-    return {"message": "Use POST /api/ingest/sync instead"}
 
 @router.get("/quota", summary="Check estimated API quota usage")
-def test_quota():
+def check_quota():
     """Return the estimated YouTube API quota usage for this session."""
     daily_limit = 10_000
     used = get_quota_used()
@@ -145,4 +154,3 @@ def test_quota():
         "quota_remaining": daily_limit - used,
         "quota_percent": round((used / daily_limit) * 100, 2),
     }
-

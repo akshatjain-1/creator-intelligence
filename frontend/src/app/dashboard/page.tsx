@@ -8,8 +8,11 @@ import { VideoTable } from "@/components/dashboard/video-table"
 import { InsightDrawer } from "@/components/dashboard/insight-drawer"
 import { fetchDashboardStats, fetchVideos, analyzeVideo, syncData } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/components/auth-context"
 
 export default function DashboardPage() {
+    const { token, activeChannelId } = useAuth()
+
     const [stats, setStats] = useState<any>(null)
     const [videos, setVideos] = useState<any[]>([])
 
@@ -23,10 +26,11 @@ export default function DashboardPage() {
     const [isSyncing, setIsSyncing] = useState(false)
 
     async function loadData() {
+        if (!token || !activeChannelId) return
         try {
             const [statsData, videosData] = await Promise.all([
-                fetchDashboardStats(),
-                fetchVideos(),
+                fetchDashboardStats(token, activeChannelId),
+                fetchVideos(token, activeChannelId),
             ])
             setStats(statsData)
             setVideos(videosData.videos)
@@ -37,12 +41,12 @@ export default function DashboardPage() {
 
     useEffect(() => {
         loadData()
-    }, [])
+    }, [token, activeChannelId])
 
     const handleSync = async () => {
         setIsSyncing(true)
         try {
-            await syncData()
+            await syncData(token, activeChannelId ?? undefined)
             await loadData()
         } catch (error) {
             console.error("Sync failed", error)
@@ -58,13 +62,22 @@ export default function DashboardPage() {
         setIsAnalyzing(true)
 
         try {
-            const result = await analyzeVideo(video.id)
+            const result = await analyzeVideo(token, video.id)
             setAnalysisResult(result)
         } catch (error) {
             console.error("Analysis failed", error)
         } finally {
             setIsAnalyzing(false)
         }
+    }
+
+    if (!activeChannelId) {
+        return (
+            <div className="p-8 text-center text-muted-foreground">
+                <p className="text-lg">No channel selected.</p>
+                <p className="text-sm mt-2">Connect a YouTube channel from the sidebar to get started.</p>
+            </div>
+        )
     }
 
     if (!stats) return <div className="p-8 text-muted-foreground">Loading dashboard...</div>

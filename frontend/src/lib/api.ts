@@ -1,29 +1,77 @@
-const API_URL = "http://localhost:8000/api"
+/**
+ * API client — all backend requests go through here.
+ *
+ * Automatically attaches Firebase JWT from the auth context.
+ * All data-fetching functions accept channelId for multi-tenant scoping.
+ */
 
-export async function fetchDashboardStats() {
-    const res = await fetch(`${API_URL}/dashboard/stats`, { cache: "no-store" })
-    if (!res.ok) throw new Error("Failed to fetch stats")
-    return res.json()
-}
+const API_BASE = "http://localhost:8000/api"
 
-export async function fetchVideos() {
-    const res = await fetch(`${API_URL}/videos`, { cache: "no-store" })
-    if (!res.ok) throw new Error("Failed to fetch videos")
-    return res.json()
-}
+/**
+ * Authenticated fetch wrapper.
+ * Attaches Authorization header and handles common error patterns.
+ */
+async function apiFetch(
+    path: string,
+    token: string | null,
+    options: RequestInit = {}
+): Promise<Response> {
+    const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...(options.headers as Record<string, string>),
+    }
 
-export async function analyzeVideo(videoId: string) {
-    const res = await fetch(`${API_URL}/videos/${videoId}/analyze`, {
-        method: "POST",
+    if (token) {
+        headers["Authorization"] = `Bearer ${token}`
+    }
+
+    const res = await fetch(`${API_BASE}${path}`, {
+        ...options,
+        headers,
     })
-    if (!res.ok) throw new Error("Failed to analyze video")
+
+    if (res.status === 401) {
+        // Token expired — caller should handle re-auth
+        throw new Error("UNAUTHORIZED")
+    }
+
+    return res
+}
+
+
+export async function fetchDashboardStats(token: string | null, channelId: string) {
+    const res = await apiFetch(
+        `/dashboard/stats?channel_id=${encodeURIComponent(channelId)}`,
+        token
+    )
     return res.json()
 }
 
-export async function syncData() {
-    const res = await fetch(`${API_URL}/ingest/sync`, {
-        method: "POST",
-    })
-    if (!res.ok) throw new Error("Failed to sync data")
+
+export async function fetchVideos(token: string | null, channelId: string) {
+    const res = await apiFetch(
+        `/videos?channel_id=${encodeURIComponent(channelId)}`,
+        token
+    )
+    return res.json()
+}
+
+
+export async function analyzeVideo(token: string | null, videoId: string) {
+    const res = await apiFetch(
+        `/videos/${videoId}/analyze`,
+        token,
+        { method: "POST" }
+    )
+    return res.json()
+}
+
+
+export async function syncData(token: string | null, channelId?: string) {
+    let path = "/ingest/sync"
+    if (channelId) {
+        path += `?channel_id=${encodeURIComponent(channelId)}`
+    }
+    const res = await apiFetch(path, token, { method: "POST" })
     return res.json()
 }
