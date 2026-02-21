@@ -163,6 +163,7 @@ class AnalyticsSnapshot(Base):
 
     # Metrics
     views = Column(Integer, nullable=True, default=0)
+    impressions = Column(Integer, nullable=True, default=0)
     watch_time_minutes = Column(Integer, nullable=True, default=0)
     average_view_duration = Column(Integer, nullable=True, default=0)
     retention_at_30s = Column(Float, nullable=True)
