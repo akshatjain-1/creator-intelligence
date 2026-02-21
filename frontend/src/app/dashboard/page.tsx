@@ -9,6 +9,7 @@ import { InsightDrawer } from "@/components/dashboard/insight-drawer"
 import { ConversionFunnel } from "@/components/dashboard/conversion-funnel"
 import { PerformanceCharts } from "@/components/dashboard/performance-charts"
 import { HookGaugeCard } from "@/components/dashboard/hook-gauge"
+import { InsightFeed } from "@/components/dashboard/insight-feed"
 import {
     fetchDashboardStats,
     fetchVideos,
@@ -136,8 +137,13 @@ export default function DashboardPage() {
                 />
             </div>
 
-            {/* Row 3: Performance Charts */}
-            <PerformanceCharts trends={trends} />
+            {/* Row 3: Performance Charts + Insight Feed */}
+            <div className="grid gap-6 lg:grid-cols-3">
+                <div className="lg:col-span-2">
+                    <PerformanceCharts trends={trends} />
+                </div>
+                <InsightFeed />
+            </div>
 
             {/* Row 4: Video Table */}
             <div className="grid gap-8 md:grid-cols-1">

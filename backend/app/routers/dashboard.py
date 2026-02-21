@@ -307,3 +307,130 @@ def dashboard_trends(
             for v in videos
         ]
     }
+
+
+@router.get("/dashboard/insights", summary="Rule-based insight feed")
+def dashboard_insights(
+    channel_id: str = Query(..., description="YouTube channel ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Rule-based pre-processing (PRD Req 3.1).
+    Detects anomalies across the channel's videos and returns
+    a prioritized insight feed with actionable signals.
+    """
+    channel = _get_owned_channel(channel_id, current_user, db)
+
+    videos = (
+        db.query(Video)
+        .filter(Video.channel_id == channel.id, Video.hook_score.isnot(None))
+        .order_by(Video.published_at.desc())
+        .all()
+    )
+
+    if not videos:
+        return {"insights": [], "count": 0}
+
+    # Compute channel baselines
+    hook_scores = [v.hook_score for v in videos if v.hook_score is not None]
+    velocities = [v.velocity for v in videos if v.velocity is not None]
+    view_counts = [v.view_count for v in videos if v.view_count is not None]
+
+    avg_hook = sum(hook_scores) / len(hook_scores) if hook_scores else 0
+    avg_velocity = sum(velocities) / len(velocities) if velocities else 0
+    avg_views = sum(view_counts) / len(view_counts) if view_counts else 0
+
+    # Fetch analytics for CTR baselines
+    video_ids = [v.id for v in videos]
+    snapshots = (
+        db.query(AnalyticsSnapshot)
+        .filter(AnalyticsSnapshot.video_id.in_(video_ids))
+        .all()
+    )
+    ctr_by_video = {}
+    for s in snapshots:
+        if s.ctr is not None and s.ctr > 0:
+            ctr_by_video[s.video_id] = s.ctr
+
+    ctr_values = list(ctr_by_video.values())
+    avg_ctr = sum(ctr_values) / len(ctr_values) if ctr_values else None
+
+    # Generate insights
+    insights = []
+
+    for video in videos[:10]:  # Focus on recent 10 videos
+        signals = []
+
+        # LOW_HOOK: Hook score < avg - 10%
+        if video.hook_score is not None and avg_hook > 0:
+            if video.hook_score < avg_hook * 0.9:
+                deviation = round(((video.hook_score - avg_hook) / avg_hook) * 100, 1)
+                signals.append({
+                    "type": "LOW_HOOK",
+                    "severity": "warning" if video.hook_score >= 30 else "critical",
+                    "message": f"Hook score ({video.hook_score:.0f}) is {abs(deviation)}% below your channel average ({avg_hook:.0f})",
+                    "suggestion": "Consider a stronger opening — front-load the value proposition in the first 10 seconds.",
+                })
+
+        # STRONG_HOOK: Hook score > avg + 15%
+        if video.hook_score is not None and avg_hook > 0:
+            if video.hook_score > avg_hook * 1.15:
+                deviation = round(((video.hook_score - avg_hook) / avg_hook) * 100, 1)
+                signals.append({
+                    "type": "STRONG_HOOK",
+                    "severity": "positive",
+                    "message": f"Hook score ({video.hook_score:.0f}) is {deviation}% above average — study this intro pattern.",
+                    "suggestion": "Replicate this hook structure in future videos.",
+                })
+
+        # HIGH_VELOCITY: Velocity > avg * 1.5
+        if video.velocity is not None and avg_velocity > 0:
+            if video.velocity > avg_velocity * 1.5:
+                signals.append({
+                    "type": "HIGH_VELOCITY",
+                    "severity": "positive",
+                    "message": f"This video grew {video.velocity:.1f}x faster than channel average ({avg_velocity:.1f}x).",
+                    "suggestion": "Topic & format resonated with your audience. Consider a follow-up or series.",
+                })
+
+        # DECLINING_VIEWS: Views < avg - 30%
+        if video.view_count is not None and avg_views > 0:
+            if video.view_count < avg_views * 0.7:
+                deviation = round(((video.view_count - avg_views) / avg_views) * 100, 1)
+                signals.append({
+                    "type": "DECLINING_VIEWS",
+                    "severity": "warning",
+                    "message": f"Views ({video.view_count:,}) are {abs(deviation)}% below your average ({avg_views:,.0f}).",
+                    "suggestion": "Check thumbnail & title against your top performers. Consider re-uploading the thumbnail.",
+                })
+
+        # LOW_CTR: CTR < avg - 10%
+        if video.id in ctr_by_video and avg_ctr is not None:
+            video_ctr = ctr_by_video[video.id]
+            if video_ctr < avg_ctr * 0.9:
+                signals.append({
+                    "type": "LOW_CTR",
+                    "severity": "warning",
+                    "message": f"Click-through rate ({video_ctr*100:.2f}%) is below channel average ({avg_ctr*100:.2f}%).",
+                    "suggestion": "Test a new thumbnail or title. CTR is the #1 lever for discovery.",
+                })
+
+        if signals:
+            insights.append({
+                "video_id": str(video.id),
+                "youtube_video_id": video.youtube_video_id,
+                "title": video.title,
+                "thumbnail_url": video.thumbnail_url,
+                "published_at": video.published_at.isoformat() if video.published_at else None,
+                "signals": signals,
+            })
+
+    # Sort by severity priority (critical first, then warning, then positive)
+    severity_order = {"critical": 0, "warning": 1, "positive": 2}
+    insights.sort(
+        key=lambda i: min(severity_order.get(s["severity"], 3) for s in i["signals"])
+    )
+
+    return {"insights": insights, "count": len(insights)}
+

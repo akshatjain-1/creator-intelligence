@@ -113,3 +113,13 @@ export async function fetchTrends(token: string | null, channelId: string) {
     )
     return res.json()
 }
+
+
+export async function fetchInsights(token: string | null, channelId: string) {
+    const res = await apiFetch(
+        `/dashboard/insights?channel_id=${encodeURIComponent(channelId)}`,
+        token
+    )
+    return res.json()
+}
+
