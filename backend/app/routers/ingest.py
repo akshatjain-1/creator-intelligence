@@ -75,6 +75,7 @@ def _sync_channel(channel: YouTubeChannel, db: Session):
             ).first()
 
             if existing:
+                existing.channel_id = channel.id  # Re-link orphaned videos
                 existing.title = video_data["title"]
                 existing.published_at = video_data["published_at"]
                 existing.duration_seconds = video_data["duration_seconds"]

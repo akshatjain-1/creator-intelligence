@@ -219,3 +219,91 @@ def analyze_video(
         "insight": insight,
         "analyzed_at": video.last_analyzed_at.isoformat(),
     }
+
+
+@router.get("/dashboard/funnel", summary="Conversion funnel data for the channel")
+def dashboard_funnel(
+    channel_id: str = Query(..., description="YouTube channel ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns aggregated conversion funnel metrics:
+    Impressions → CTR → Views → Avg View Duration
+    """
+    channel = _get_owned_channel(channel_id, current_user, db)
+
+    # Get all videos for this channel
+    videos = db.query(Video).filter(Video.channel_id == channel.id).all()
+    video_ids = [v.id for v in videos]
+
+    if not video_ids:
+        return {
+            "impressions": 0,
+            "ctr": 0,
+            "views": 0,
+            "avg_view_duration": 0,
+        }
+
+    # Aggregate latest analytics snapshot per video
+    from sqlalchemy import func as sqlfunc
+
+    snapshots = (
+        db.query(AnalyticsSnapshot)
+        .filter(AnalyticsSnapshot.video_id.in_(video_ids))
+        .all()
+    )
+
+    if not snapshots:
+        total_views = sum(v.view_count or 0 for v in videos)
+        return {
+            "impressions": 0,
+            "ctr": 0,
+            "views": total_views,
+            "avg_view_duration": 0,
+        }
+
+    total_views = sum(s.views or 0 for s in snapshots)
+    total_impressions = sum(s.impressions or 0 for s in snapshots)
+    avg_ctr_vals = [s.ctr for s in snapshots if s.ctr is not None and s.ctr > 0]
+    avg_duration_vals = [s.average_view_duration for s in snapshots if s.average_view_duration]
+
+    return {
+        "impressions": total_impressions,
+        "ctr": round(sum(avg_ctr_vals) / len(avg_ctr_vals) * 100, 2) if avg_ctr_vals else 0,
+        "views": total_views,
+        "avg_view_duration": round(sum(avg_duration_vals) / len(avg_duration_vals)) if avg_duration_vals else 0,
+    }
+
+
+@router.get("/dashboard/trends", summary="Time-series video performance data")
+def dashboard_trends(
+    channel_id: str = Query(..., description="YouTube channel ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns per-video performance data for time-series charts.
+    Videos are sorted by published_at and include hook_score, velocity, views.
+    """
+    channel = _get_owned_channel(channel_id, current_user, db)
+
+    videos = (
+        db.query(Video)
+        .filter(Video.channel_id == channel.id)
+        .order_by(Video.published_at.asc())
+        .all()
+    )
+
+    return {
+        "trends": [
+            {
+                "title": v.title[:40] + ("..." if len(v.title) > 40 else ""),
+                "published_at": v.published_at.isoformat() if v.published_at else None,
+                "views": v.view_count or 0,
+                "hook_score": v.hook_score,
+                "velocity": v.velocity,
+            }
+            for v in videos
+        ]
+    }

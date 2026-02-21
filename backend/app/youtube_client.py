@@ -308,6 +308,7 @@ class YouTubeClient:
                 "average_view_duration": int(row[3]),
                 "retention_at_30s": round(float(row[4]), 2),  # averageViewPercentage
                 "ctr": round(float(row[5]), 4),  # annotationClickThroughRate
+                "impressions": int(int(row[1]) / float(row[5])) if float(row[5]) > 0 else None,
             }
 
         logger.warning(

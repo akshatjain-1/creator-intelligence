@@ -5,11 +5,14 @@
  * All data-fetching functions accept channelId for multi-tenant scoping.
  */
 
+import { auth } from "@/lib/firebase"
+
 const API_BASE = "http://localhost:8000/api"
 
 /**
  * Authenticated fetch wrapper.
  * Attaches Authorization header and handles common error patterns.
+ * On 401, automatically refreshes the Firebase token and retries once.
  */
 async function apiFetch(
     path: string,
@@ -30,8 +33,25 @@ async function apiFetch(
         headers,
     })
 
+    // On 401, try refreshing the token and retry once
     if (res.status === 401) {
-        // Token expired — caller should handle re-auth
+        const currentUser = auth.currentUser
+        if (currentUser) {
+            try {
+                const freshToken = await currentUser.getIdToken(true)
+                headers["Authorization"] = `Bearer ${freshToken}`
+                const retryRes = await fetch(`${API_BASE}${path}`, {
+                    ...options,
+                    headers,
+                })
+                if (retryRes.status === 401) {
+                    throw new Error("UNAUTHORIZED")
+                }
+                return retryRes
+            } catch (err) {
+                throw new Error("UNAUTHORIZED")
+            }
+        }
         throw new Error("UNAUTHORIZED")
     }
 
@@ -73,5 +93,23 @@ export async function syncData(token: string | null, channelId?: string) {
         path += `?channel_id=${encodeURIComponent(channelId)}`
     }
     const res = await apiFetch(path, token, { method: "POST" })
+    return res.json()
+}
+
+
+export async function fetchFunnelData(token: string | null, channelId: string) {
+    const res = await apiFetch(
+        `/dashboard/funnel?channel_id=${encodeURIComponent(channelId)}`,
+        token
+    )
+    return res.json()
+}
+
+
+export async function fetchTrends(token: string | null, channelId: string) {
+    const res = await apiFetch(
+        `/dashboard/trends?channel_id=${encodeURIComponent(channelId)}`,
+        token
+    )
     return res.json()
 }

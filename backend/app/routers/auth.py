@@ -52,17 +52,40 @@ def _build_flow() -> Flow:
 
 
 @router.get("/login", summary="Redirect to Google OAuth consent screen")
-def auth_login(current_user: User = Depends(get_current_user)):
+def auth_login(token: str = Query(..., description="Firebase ID token"), db: Session = Depends(get_db)):
     """
-    Requires Firebase JWT. Stores user's firebase_uid in OAuth state
-    so the callback can link the channel to the correct user.
+    Accepts Firebase token as a query parameter (browser redirects can't set headers).
+    Verifies the token, then redirects to Google OAuth with firebase_uid in state.
     """
+    import firebase_admin
+    from firebase_admin import auth as firebase_auth
+
+    # Manually verify the Firebase token from query param
+    try:
+        decoded = firebase_auth.verify_id_token(token)
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired Firebase token",
+        )
+
+    firebase_uid = decoded["uid"]
+    email = decoded.get("email", "")
+
+    # Ensure user exists
+    user = db.query(User).filter(User.firebase_uid == firebase_uid).first()
+    if not user:
+        user = User(firebase_uid=firebase_uid, email=email)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
     flow = _build_flow()
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         prompt="consent",
         include_granted_scopes="true",
-        state=current_user.firebase_uid,  # Pass user identity through OAuth state
+        state=user.firebase_uid,  # Pass user identity through OAuth state
     )
     return RedirectResponse(url=auth_url)
 

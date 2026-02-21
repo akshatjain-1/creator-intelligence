@@ -6,7 +6,17 @@ import { StatsCards } from "@/components/dashboard/stats-cards"
 import { PulseWidget } from "@/components/dashboard/pulse-widget"
 import { VideoTable } from "@/components/dashboard/video-table"
 import { InsightDrawer } from "@/components/dashboard/insight-drawer"
-import { fetchDashboardStats, fetchVideos, analyzeVideo, syncData } from "@/lib/api"
+import { ConversionFunnel } from "@/components/dashboard/conversion-funnel"
+import { PerformanceCharts } from "@/components/dashboard/performance-charts"
+import { HookGaugeCard } from "@/components/dashboard/hook-gauge"
+import {
+    fetchDashboardStats,
+    fetchVideos,
+    analyzeVideo,
+    syncData,
+    fetchFunnelData,
+    fetchTrends,
+} from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-context"
 
@@ -15,6 +25,8 @@ export default function DashboardPage() {
 
     const [stats, setStats] = useState<any>(null)
     const [videos, setVideos] = useState<any[]>([])
+    const [funnel, setFunnel] = useState<any>(null)
+    const [trends, setTrends] = useState<any[]>([])
 
     // Analysis state
     const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -28,12 +40,16 @@ export default function DashboardPage() {
     async function loadData() {
         if (!token || !activeChannelId) return
         try {
-            const [statsData, videosData] = await Promise.all([
+            const [statsData, videosData, funnelData, trendsData] = await Promise.all([
                 fetchDashboardStats(token, activeChannelId),
                 fetchVideos(token, activeChannelId),
+                fetchFunnelData(token, activeChannelId),
+                fetchTrends(token, activeChannelId),
             ])
             setStats(statsData)
             setVideos(videosData.videos)
+            setFunnel(funnelData)
+            setTrends(trendsData.trends ?? [])
         } catch (error) {
             console.error("Failed to load dashboard data", error)
         }
@@ -107,18 +123,25 @@ export default function DashboardPage() {
                 </button>
             </div>
 
+            {/* Row 1: Stats Cards */}
             <StatsCards stats={stats} />
 
-            <div className="grid gap-8 md:grid-cols-3">
-                <div className="md:col-span-2">
-                    <VideoTable videos={videos} onAnalyze={handleAnalyze} />
-                </div>
-                <div>
-                    <PulseWidget
-                        latestVideo={latestVideo ? { title: latestVideo.title, velocity: latestVideo.velocity } : undefined}
-                        avgVelocity={stats.avg_velocity}
-                    />
-                </div>
+            {/* Row 2: Funnel + Hook Gauge + Pulse */}
+            <div className="grid gap-6 md:grid-cols-3">
+                <ConversionFunnel data={funnel} />
+                <HookGaugeCard score={stats.avg_hook_score} />
+                <PulseWidget
+                    latestVideo={latestVideo ? { title: latestVideo.title, velocity: latestVideo.velocity } : undefined}
+                    avgVelocity={stats.avg_velocity}
+                />
+            </div>
+
+            {/* Row 3: Performance Charts */}
+            <PerformanceCharts trends={trends} />
+
+            {/* Row 4: Video Table */}
+            <div className="grid gap-8 md:grid-cols-1">
+                <VideoTable videos={videos} onAnalyze={handleAnalyze} />
             </div>
 
             <InsightDrawer

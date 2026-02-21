@@ -12,6 +12,8 @@ import React, {
     useContext,
     useEffect,
     useState,
+    useCallback,
+    useRef,
     type ReactNode,
 } from "react"
 import {
@@ -37,6 +39,7 @@ interface AuthContextValue {
     setActiveChannelId: (id: string) => void
     channels: Channel[]
     logout: () => Promise<void>
+    refreshToken: () => Promise<string | null>
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -47,6 +50,7 @@ const AuthContext = createContext<AuthContextValue>({
     setActiveChannelId: () => { },
     channels: [],
     logout: async () => { },
+    refreshToken: async () => null,
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -55,22 +59,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [token, setToken] = useState<string | null>(null)
     const [channels, setChannels] = useState<Channel[]>([])
     const [activeChannelId, setActiveChannelId] = useState<string | null>(null)
+    const refreshTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+    // Force-refresh the Firebase ID token
+    const refreshToken = useCallback(async (): Promise<string | null> => {
+        const currentUser = auth.currentUser
+        if (!currentUser) return null
+        try {
+            // forceRefresh = true -> always gets a fresh token
+            const freshToken = await currentUser.getIdToken(true)
+            setToken(freshToken)
+            return freshToken
+        } catch (err) {
+            console.error("Failed to refresh token:", err)
+            return null
+        }
+    }, [])
 
     // Listen for Firebase auth state changes
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
             setUser(firebaseUser)
             if (firebaseUser) {
-                const idToken = await firebaseUser.getIdToken()
+                const idToken = await firebaseUser.getIdToken(true)
                 setToken(idToken)
+
+                // Refresh token every 50 minutes (tokens expire at 60 min)
+                if (refreshTimerRef.current) clearInterval(refreshTimerRef.current)
+                refreshTimerRef.current = setInterval(async () => {
+                    try {
+                        const fresh = await firebaseUser.getIdToken(true)
+                        setToken(fresh)
+                    } catch (err) {
+                        console.error("Token auto-refresh failed:", err)
+                    }
+                }, 50 * 60 * 1000) // 50 minutes
             } else {
                 setToken(null)
                 setChannels([])
                 setActiveChannelId(null)
+                if (refreshTimerRef.current) {
+                    clearInterval(refreshTimerRef.current)
+                    refreshTimerRef.current = null
+                }
             }
             setLoading(false)
         })
-        return unsub
+
+        return () => {
+            unsub()
+            if (refreshTimerRef.current) clearInterval(refreshTimerRef.current)
+        }
     }, [])
 
     // When token is available, fetch connected channels
@@ -82,10 +121,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 const res = await fetch("http://localhost:8000/auth/channels", {
                     headers: { Authorization: `Bearer ${token}` },
                 })
+                if (res.status === 401) {
+                    // Token was stale, force refresh and retry
+                    const freshToken = await refreshToken()
+                    if (freshToken) {
+                        const retryRes = await fetch("http://localhost:8000/auth/channels", {
+                            headers: { Authorization: `Bearer ${freshToken}` },
+                        })
+                        if (retryRes.ok) {
+                            const data: Channel[] = await retryRes.json()
+                            setChannels(data)
+                            if (data.length > 0 && !activeChannelId) {
+                                setActiveChannelId(data[0].youtube_channel_id)
+                            }
+                        }
+                    }
+                    return
+                }
                 if (res.ok) {
                     const data: Channel[] = await res.json()
                     setChannels(data)
-                    // Auto-select first channel if none active
                     if (data.length > 0 && !activeChannelId) {
                         setActiveChannelId(data[0].youtube_channel_id)
                     }
@@ -116,6 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setActiveChannelId,
                 channels,
                 logout,
+                refreshToken,
             }}
         >
             {children}
