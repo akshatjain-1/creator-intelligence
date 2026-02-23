@@ -20,7 +20,7 @@ from googleapiclient.discovery import build
 
 from app.config import settings
 from app.database import get_db
-from app.models import User, YouTubeChannel
+from app.models import User, YouTubeChannel, Video, AnalyticsSnapshot
 from app.encryption import encrypt_token
 from app.dependencies import get_current_user
 
@@ -210,6 +210,49 @@ def list_channels(
             "channel_name": ch.channel_name,
             "channel_avatar_url": ch.channel_avatar_url,
             "is_active": ch.is_active,
+            "created_at": ch.created_at.isoformat() if ch.created_at else None,
         }
         for ch in channels
     ]
+
+
+@router.delete("/channels/{channel_id}", summary="Disconnect a YouTube channel")
+def disconnect_channel(
+    channel_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Disconnect a YouTube channel and remove all associated data.
+    Only the channel owner can disconnect.
+    """
+    channel = (
+        db.query(YouTubeChannel)
+        .filter(
+            YouTubeChannel.id == channel_id,
+            YouTubeChannel.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+
+    # Delete associated analytics snapshots first (FK constraint)
+    videos = db.query(Video).filter(Video.channel_id == channel.id).all()
+    video_ids = [v.id for v in videos]
+    if video_ids:
+        db.query(AnalyticsSnapshot).filter(
+            AnalyticsSnapshot.video_id.in_(video_ids)
+        ).delete(synchronize_session=False)
+
+    # Delete videos
+    db.query(Video).filter(Video.channel_id == channel.id).delete(
+        synchronize_session=False
+    )
+
+    # Delete the channel itself
+    db.delete(channel)
+    db.commit()
+
+    return {"status": "disconnected", "channel_id": channel_id}
+

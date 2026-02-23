@@ -123,3 +123,16 @@ export async function fetchInsights(token: string | null, channelId: string) {
     return res.json()
 }
 
+
+export async function disconnectChannel(token: string | null, channelId: string) {
+    const res = await fetch(`http://localhost:8000/auth/channels/${encodeURIComponent(channelId)}`, {
+        method: "DELETE",
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    })
+    if (!res.ok) throw new Error("Failed to disconnect channel")
+    return res.json()
+}
+
+

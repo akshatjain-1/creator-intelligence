@@ -40,6 +40,7 @@ interface AuthContextValue {
     channels: Channel[]
     logout: () => Promise<void>
     refreshToken: () => Promise<string | null>
+    refreshChannels: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -51,6 +52,7 @@ const AuthContext = createContext<AuthContextValue>({
     channels: [],
     logout: async () => { },
     refreshToken: async () => null,
+    refreshChannels: async () => { },
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -112,45 +114,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     }, [])
 
+    // Reusable channel-fetching logic
+    const refreshChannels = useCallback(async () => {
+        const currentToken = token || (auth.currentUser ? await auth.currentUser.getIdToken(true) : null)
+        if (!currentToken) return
+
+        try {
+            const res = await fetch("http://localhost:8000/auth/channels", {
+                headers: { Authorization: `Bearer ${currentToken}` },
+            })
+            if (res.ok) {
+                const data: Channel[] = await res.json()
+                setChannels(data)
+                if (data.length > 0 && !activeChannelId) {
+                    setActiveChannelId(data[0].youtube_channel_id)
+                }
+            }
+        } catch (err) {
+            console.error("Failed to fetch channels:", err)
+        }
+    }, [token, activeChannelId])
+
     // When token is available, fetch connected channels
     useEffect(() => {
         if (!token) return
-
-        const fetchChannels = async () => {
-            try {
-                const res = await fetch("http://localhost:8000/auth/channels", {
-                    headers: { Authorization: `Bearer ${token}` },
-                })
-                if (res.status === 401) {
-                    // Token was stale, force refresh and retry
-                    const freshToken = await refreshToken()
-                    if (freshToken) {
-                        const retryRes = await fetch("http://localhost:8000/auth/channels", {
-                            headers: { Authorization: `Bearer ${freshToken}` },
-                        })
-                        if (retryRes.ok) {
-                            const data: Channel[] = await retryRes.json()
-                            setChannels(data)
-                            if (data.length > 0 && !activeChannelId) {
-                                setActiveChannelId(data[0].youtube_channel_id)
-                            }
-                        }
-                    }
-                    return
-                }
-                if (res.ok) {
-                    const data: Channel[] = await res.json()
-                    setChannels(data)
-                    if (data.length > 0 && !activeChannelId) {
-                        setActiveChannelId(data[0].youtube_channel_id)
-                    }
-                }
-            } catch (err) {
-                console.error("Failed to fetch channels:", err)
-            }
-        }
-
-        fetchChannels()
+        refreshChannels()
     }, [token])
 
     const logout = async () => {
@@ -172,6 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 channels,
                 logout,
                 refreshToken,
+                refreshChannels,
             }}
         >
             {children}
