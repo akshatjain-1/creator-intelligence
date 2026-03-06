@@ -23,10 +23,10 @@ interface VideoTableProps {
 
 export function VideoTable({ videos, onAnalyze }: VideoTableProps) {
     return (
-        <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
+        <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden">
             <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
-                    <thead className="bg-muted/50 text-muted-foreground uppercase text-xs font-medium">
+                    <thead className="bg-muted/30 text-muted-foreground uppercase text-[11px] font-semibold tracking-wider">
                         <tr>
                             <th className="px-6 py-3">Video</th>
                             <th className="px-6 py-3 text-right">Views</th>
@@ -36,9 +36,9 @@ export function VideoTable({ videos, onAnalyze }: VideoTableProps) {
                             <th className="px-6 py-3 text-right">Action</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-border">
+                    <tbody className="divide-y divide-border/50">
                         {videos.map((video) => (
-                            <tr key={video.id} className="hover:bg-muted/50 transition-colors">
+                            <tr key={video.id} className="hover:bg-muted/20 transition-colors">
                                 <td className="px-6 py-4">
                                     <div className="flex items-center gap-3">
                                         <img
@@ -51,7 +51,7 @@ export function VideoTable({ videos, onAnalyze }: VideoTableProps) {
                                         </div>
                                     </div>
                                 </td>
-                                <td className="px-6 py-4 text-right font-medium">
+                                <td className="px-6 py-4 text-right font-medium tabular-nums">
                                     {video.views?.toLocaleString()}
                                 </td>
                                 <td className="px-6 py-4">
@@ -59,7 +59,7 @@ export function VideoTable({ videos, onAnalyze }: VideoTableProps) {
                                         <HookGauge score={video.hook_score} />
                                     </div>
                                 </td>
-                                <td className="px-6 py-4 text-center">
+                                <td className="px-6 py-4 text-center tabular-nums">
                                     {video.velocity?.toFixed(2)}
                                 </td>
                                 <td className="px-6 py-4 text-center">
@@ -67,7 +67,7 @@ export function VideoTable({ videos, onAnalyze }: VideoTableProps) {
                                         <div
                                             className={cn(
                                                 "flex items-center justify-center gap-1 text-xs font-bold",
-                                                video.hook_delta >= 0 ? "text-green-500" : "text-red-500"
+                                                video.hook_delta >= 0 ? "text-teal" : "text-coral"
                                             )}
                                         >
                                             {video.hook_delta >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
@@ -80,7 +80,7 @@ export function VideoTable({ videos, onAnalyze }: VideoTableProps) {
                                 <td className="px-6 py-4 text-right">
                                     <button
                                         onClick={() => onAnalyze(video)}
-                                        className="inline-flex items-center gap-1 bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+                                        className="inline-flex items-center gap-1.5 bg-coral/10 hover:bg-coral/20 text-coral px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
                                     >
                                         <Play className="h-3 w-3 fill-current" />
                                         Analyze

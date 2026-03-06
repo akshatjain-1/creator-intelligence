@@ -27,8 +27,8 @@ export default function ChannelSwitcher() {
             <button
                 onClick={handleConnectChannel}
                 className="w-full flex items-center gap-2 rounded-lg
-                           bg-violet-500/10 text-violet-400 px-3 py-2.5
-                           hover:bg-violet-500/20 transition-colors text-sm font-medium"
+                           bg-coral/10 text-coral px-3 py-2.5
+                           hover:bg-coral/20 transition-colors text-sm font-medium"
             >
                 <Plus className="w-4 h-4" />
                 Connect YouTube Channel
@@ -48,7 +48,7 @@ export default function ChannelSwitcher() {
                     <img
                         src={activeChannel.channel_avatar_url}
                         alt=""
-                        className="w-7 h-7 rounded-full ring-2 ring-violet-500/30"
+                        className="w-7 h-7 rounded-full ring-2 ring-coral/30"
                     />
                 )}
                 <div className="flex-1 text-left min-w-0">
@@ -87,7 +87,7 @@ export default function ChannelSwitcher() {
                                 {ch.channel_name}
                             </span>
                             {ch.youtube_channel_id === activeChannelId && (
-                                <Check className="w-4 h-4 text-violet-400" />
+                                <Check className="w-4 h-4 text-coral" />
                             )}
                         </button>
                     ))}
@@ -100,7 +100,7 @@ export default function ChannelSwitcher() {
                                 handleConnectChannel()
                             }}
                             className="w-full flex items-center gap-2 px-3 py-2.5
-                                       text-violet-400 hover:bg-violet-500/10
+                                       text-coral hover:bg-coral/10
                                        transition-colors text-sm"
                         >
                             <Plus className="w-4 h-4" />

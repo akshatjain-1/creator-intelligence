@@ -47,7 +47,7 @@ function CustomTooltip({ active, payload, label }: any) {
 export function PerformanceCharts({ trends }: PerformanceChartsProps) {
     if (!trends || trends.length === 0) {
         return (
-            <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-6">
+            <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm p-6">
                 <h3 className="text-lg font-semibold mb-4">Performance Trends</h3>
                 <p className="text-muted-foreground text-sm">
                     Not enough data yet. Sync your channel to see trends.
@@ -66,7 +66,7 @@ export function PerformanceCharts({ trends }: PerformanceChartsProps) {
     return (
         <div className="space-y-6">
             {/* Views Chart */}
-            <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-6">
+            <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm p-6">
                 <h3 className="text-lg font-semibold mb-1">Views by Video</h3>
                 <p className="text-xs text-muted-foreground mb-4">
                     Total views per video (oldest → newest)
@@ -98,8 +98,8 @@ export function PerformanceCharts({ trends }: PerformanceChartsProps) {
                         />
                         <defs>
                             <linearGradient id="viewsGradient" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#8b5cf6" />
-                                <stop offset="100%" stopColor="#6d28d9" />
+                                <stop offset="0%" stopColor="#FF6B6B" />
+                                <stop offset="100%" stopColor="#FF6B6B" stopOpacity={0.6} />
                             </linearGradient>
                         </defs>
                     </BarChart>
@@ -107,7 +107,7 @@ export function PerformanceCharts({ trends }: PerformanceChartsProps) {
             </div>
 
             {/* Hook Score + Velocity Chart */}
-            <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-6">
+            <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm p-6">
                 <h3 className="text-lg font-semibold mb-1">Hook Score &amp; Velocity</h3>
                 <p className="text-xs text-muted-foreground mb-4">
                     Performance metrics per video
@@ -136,31 +136,31 @@ export function PerformanceCharts({ trends }: PerformanceChartsProps) {
                         />
                         <defs>
                             <linearGradient id="hookGradient" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.4} />
-                                <stop offset="100%" stopColor="#22d3ee" stopOpacity={0} />
+                                <stop offset="0%" stopColor="#4ECDC4" stopOpacity={0.4} />
+                                <stop offset="100%" stopColor="#4ECDC4" stopOpacity={0} />
                             </linearGradient>
                             <linearGradient id="velocityGradient" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#f472b6" stopOpacity={0.4} />
-                                <stop offset="100%" stopColor="#f472b6" stopOpacity={0} />
+                                <stop offset="0%" stopColor="#FFD93D" stopOpacity={0.4} />
+                                <stop offset="100%" stopColor="#FFD93D" stopOpacity={0} />
                             </linearGradient>
                         </defs>
                         <Area
                             type="monotone"
                             dataKey="hook_score"
                             name="Hook Score"
-                            stroke="#22d3ee"
+                            stroke="#4ECDC4"
                             strokeWidth={2}
                             fill="url(#hookGradient)"
-                            dot={{ r: 4, fill: "#22d3ee" }}
+                            dot={{ r: 4, fill: "#4ECDC4" }}
                         />
                         <Area
                             type="monotone"
                             dataKey="velocity"
                             name="Velocity"
-                            stroke="#f472b6"
+                            stroke="#FFD93D"
                             strokeWidth={2}
                             fill="url(#velocityGradient)"
-                            dot={{ r: 4, fill: "#f472b6" }}
+                            dot={{ r: 4, fill: "#FFD93D" }}
                         />
                     </AreaChart>
                 </ResponsiveContainer>

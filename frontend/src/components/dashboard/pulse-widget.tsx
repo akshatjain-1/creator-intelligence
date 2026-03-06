@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils"
+import { Zap } from "lucide-react"
 
 interface PulseWidgetProps {
     latestVideo?: {
@@ -17,11 +18,12 @@ export function PulseWidget({ latestVideo, avgVelocity }: PulseWidgetProps) {
     const widthPercent = Math.min((velocity / (avgVelocity * 2)) * 100, 100)
 
     return (
-        <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-6">
+        <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm p-6">
             <div className="flex items-center justify-between mb-4">
                 <div>
                     <h3 className="font-semibold text-lg flex items-center gap-2">
-                        ⚡ The Pulse
+                        <Zap className="h-4 w-4 text-amber" />
+                        The Pulse
                     </h3>
                     <p className="text-sm text-muted-foreground">
                         Latest video velocity vs channel average
@@ -31,8 +33,8 @@ export function PulseWidget({ latestVideo, avgVelocity }: PulseWidgetProps) {
                     className={cn(
                         "px-3 py-1 rounded-full text-xs font-bold border",
                         isAbove
-                            ? "bg-green-500/10 text-green-500 border-green-500/20"
-                            : "bg-red-500/10 text-red-500 border-red-500/20"
+                            ? "bg-teal/10 text-teal border-teal/20"
+                            : "bg-coral/10 text-coral border-coral/20"
                     )}
                 >
                     {multiplier.toFixed(1)}x {isAbove ? "ABOVE" : "BELOW"} AVG
@@ -45,15 +47,15 @@ export function PulseWidget({ latestVideo, avgVelocity }: PulseWidgetProps) {
                         <span className="font-medium truncate max-w-[300px]">
                             {latestVideo.title}
                         </span>
-                        <span className="text-muted-foreground">
+                        <span className="text-muted-foreground tabular-nums">
                             {latestVideo.velocity?.toFixed(2) ?? "0.00"} vel
                         </span>
                     </div>
-                    <div className="h-4 w-full bg-secondary rounded-full overflow-hidden">
+                    <div className="h-4 w-full bg-muted rounded-full overflow-hidden">
                         <div
                             className={cn(
                                 "h-full rounded-full transition-all duration-500",
-                                isAbove ? "bg-gradient-to-r from-emerald-500 to-green-400" : "bg-red-500"
+                                isAbove ? "gradient-teal" : "gradient-coral"
                             )}
                             style={{ width: `${Math.max(widthPercent, 5)}%` }}
                         />
@@ -63,11 +65,11 @@ export function PulseWidget({ latestVideo, avgVelocity }: PulseWidgetProps) {
                 <div>
                     <div className="flex justify-between text-sm mb-1">
                         <span className="text-muted-foreground">Channel Average</span>
-                        <span className="text-muted-foreground">
+                        <span className="text-muted-foreground tabular-nums">
                             {avgVelocity.toFixed(2)} vel
                         </span>
                     </div>
-                    <div className="h-2 w-full bg-secondary rounded-full overflow-hidden relative">
+                    <div className="h-2 w-full bg-muted rounded-full overflow-hidden relative">
                         <div
                             className="absolute left-0 top-0 h-full bg-muted-foreground/30 w-1/2"
                             title="Average Baseline"

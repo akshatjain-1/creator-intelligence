@@ -47,22 +47,22 @@ const SIGNAL_ICONS: Record<string, React.ElementType> = {
 
 const SEVERITY_STYLES: Record<string, { bg: string; border: string; icon: string; badge: string }> = {
     critical: {
-        bg: "bg-red-500/5",
-        border: "border-red-500/20",
-        icon: "text-red-400",
-        badge: "bg-red-500/15 text-red-400",
+        bg: "bg-coral/5",
+        border: "border-coral/20",
+        icon: "text-coral",
+        badge: "bg-coral/15 text-coral",
     },
     warning: {
-        bg: "bg-amber-500/5",
-        border: "border-amber-500/20",
-        icon: "text-amber-400",
-        badge: "bg-amber-500/15 text-amber-400",
+        bg: "bg-amber/5",
+        border: "border-amber/20",
+        icon: "text-amber",
+        badge: "bg-amber/15 text-amber",
     },
     positive: {
-        bg: "bg-emerald-500/5",
-        border: "border-emerald-500/20",
-        icon: "text-emerald-400",
-        badge: "bg-emerald-500/15 text-emerald-400",
+        bg: "bg-teal/5",
+        border: "border-teal/20",
+        icon: "text-teal",
+        badge: "bg-teal/15 text-teal",
     },
 }
 
@@ -99,9 +99,9 @@ export function InsightFeed() {
 
     if (loading) {
         return (
-            <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-6">
+            <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm p-6">
                 <h3 className="text-lg font-semibold flex items-center gap-2">
-                    <Sparkles className="h-5 w-5 text-violet-400" />
+                    <Sparkles className="h-5 w-5 text-coral" />
                     Insight Feed
                 </h3>
                 <p className="text-muted-foreground text-sm mt-2">Loading insights...</p>
@@ -111,9 +111,9 @@ export function InsightFeed() {
 
     if (insights.length === 0) {
         return (
-            <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-6">
+            <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm p-6">
                 <h3 className="text-lg font-semibold flex items-center gap-2">
-                    <Sparkles className="h-5 w-5 text-violet-400" />
+                    <Sparkles className="h-5 w-5 text-coral" />
                     Insight Feed
                 </h3>
                 <p className="text-muted-foreground text-sm mt-3">
@@ -127,7 +127,7 @@ export function InsightFeed() {
         <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-6">
             <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold flex items-center gap-2">
-                    <Sparkles className="h-5 w-5 text-violet-400" />
+                    <Sparkles className="h-5 w-5 text-coral" />
                     Insight Feed
                 </h3>
                 <span className="text-xs text-muted-foreground">
