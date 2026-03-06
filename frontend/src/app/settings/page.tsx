@@ -65,7 +65,7 @@ export default function SettingsPage() {
             {/* ═══ Account Section ═══ */}
             <section className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-border/30 flex items-center gap-2">
-                    <User className="h-5 w-5 text-violet-400" />
+                    <User className="h-5 w-5 text-coral" />
                     <h2 className="text-lg font-semibold">Account</h2>
                 </div>
                 <div className="p-6 space-y-4">
@@ -75,7 +75,7 @@ export default function SettingsPage() {
                                 <img
                                     src={user.photoURL}
                                     alt=""
-                                    className="w-16 h-16 rounded-full border-2 border-violet-500/30"
+                                    className="w-16 h-16 rounded-full border-2 border-coral/30"
                                 />
                             )}
                             <div>
@@ -96,8 +96,8 @@ export default function SettingsPage() {
                     <div className="pt-4 border-t border-border/30 flex gap-3">
                         <button
                             onClick={logout}
-                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10
-                                       text-red-400 hover:bg-red-500/20 transition-colors text-sm font-medium"
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-coral/10
+                                       text-coral hover:bg-coral/20 transition-colors text-sm font-medium"
                         >
                             <LogOut className="h-4 w-4" />
                             Sign Out
@@ -118,8 +118,8 @@ export default function SettingsPage() {
                     </div>
                     <button
                         onClick={handleConnectNew}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500/10
-                                   text-violet-400 hover:bg-violet-500/20 transition-colors text-sm font-medium"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal/10
+                                   text-teal hover:bg-teal/20 transition-colors text-sm font-medium"
                     >
                         <Plus className="h-4 w-4" />
                         Connect Channel
@@ -148,7 +148,7 @@ export default function SettingsPage() {
                                         className={cn(
                                             "flex items-center gap-4 p-4 rounded-lg border transition-all",
                                             isActive
-                                                ? "border-violet-500/30 bg-violet-500/5"
+                                                ? "border-coral/30 bg-coral/5"
                                                 : "border-border/30 hover:border-border/50"
                                         )}
                                     >
@@ -172,7 +172,7 @@ export default function SettingsPage() {
                                                     {channel.channel_name || "Unnamed Channel"}
                                                 </p>
                                                 {isActive && (
-                                                    <span className="text-[10px] font-semibold bg-violet-500/20 text-violet-400 px-1.5 py-0.5 rounded-full">
+                                                    <span className="text-[10px] font-semibold bg-coral/20 text-coral px-1.5 py-0.5 rounded-full">
                                                         ACTIVE
                                                     </span>
                                                 )}
@@ -199,8 +199,8 @@ export default function SettingsPage() {
                                                     <button
                                                         onClick={() => handleDisconnect(channel.id)}
                                                         disabled={isDisconnecting}
-                                                        className="text-xs px-3 py-1.5 rounded-md bg-red-500/20 text-red-400
-                                                                   hover:bg-red-500/30 transition-colors font-medium disabled:opacity-50"
+                                                        className="text-xs px-3 py-1.5 rounded-md bg-coral/20 text-coral
+                                                                   hover:bg-coral/30 transition-colors font-medium disabled:opacity-50"
                                                     >
                                                         {isDisconnecting ? "Removing..." : "Confirm"}
                                                     </button>
@@ -215,7 +215,7 @@ export default function SettingsPage() {
                                                 <button
                                                     onClick={() => setConfirmDisconnect(channel.id)}
                                                     className="p-1.5 rounded-md text-muted-foreground hover:text-red-400
-                                                               hover:bg-red-500/10 transition-colors"
+                                                               hover:bg-coral/10 transition-colors"
                                                     title="Disconnect channel"
                                                 >
                                                     <Trash2 className="h-4 w-4" />

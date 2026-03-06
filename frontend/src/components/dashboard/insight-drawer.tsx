@@ -35,7 +35,7 @@ export function InsightDrawer({ isOpen, onClose, video, analysis, isLoading }: I
                     {/* Header */}
                     <div className="flex items-center justify-between p-6 border-b">
                         <h2 className="text-lg font-bold flex items-center gap-2">
-                            <Sparkles className="h-5 w-5 text-purple-400" />
+                            <Sparkles className="h-5 w-5 text-coral" />
                             AI Insight
                         </h2>
                         <button onClick={onClose} className="p-2 hover:bg-muted rounded-md text-muted-foreground">
@@ -47,7 +47,7 @@ export function InsightDrawer({ isOpen, onClose, video, analysis, isLoading }: I
                     <div className="flex-1 overflow-y-auto p-6 space-y-8">
                         {isLoading ? (
                             <div className="flex flex-col items-center justify-center h-40 gap-4 text-muted-foreground">
-                                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                                <Loader2 className="h-8 w-8 animate-spin text-coral" />
                                 <p>Asking Gemini...</p>
                             </div>
                         ) : analysis ? (
@@ -58,14 +58,14 @@ export function InsightDrawer({ isOpen, onClose, video, analysis, isLoading }: I
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div className="p-4 rounded-lg bg-secondary/50 border flex flex-col items-center text-center gap-2">
+                                    <div className="p-4 rounded-lg bg-muted/50 border border-border/50 flex flex-col items-center text-center gap-2">
                                         <span className="text-xs text-muted-foreground uppercase font-bold">Hook Score</span>
                                         <HookGauge score={analysis.hook_score} />
                                         <span className="text-xs text-muted-foreground">
                                             vs avg {analysis.channel_avg_hook ?? "-"}
                                         </span>
                                     </div>
-                                    <div className="p-4 rounded-lg bg-secondary/50 border flex flex-col items-center justify-center text-center gap-1">
+                                    <div className="p-4 rounded-lg bg-muted/50 border border-border/50 flex flex-col items-center justify-center text-center gap-1">
                                         <span className="text-xs text-muted-foreground uppercase font-bold">Velocity</span>
                                         <span className="text-2xl font-bold">{analysis.velocity?.toFixed(2)}</span>
                                         <span className="text-xs text-muted-foreground">
@@ -74,8 +74,8 @@ export function InsightDrawer({ isOpen, onClose, video, analysis, isLoading }: I
                                     </div>
                                 </div>
 
-                                <div className="p-6 rounded-xl bg-gradient-to-br from-purple-500/10 to-blue-500/10 border border-purple-500/20">
-                                    <h3 className="text-sm font-bold text-purple-400 mb-3 uppercase flex items-center gap-2">
+                                <div className="p-6 rounded-xl bg-gradient-to-br from-coral/10 to-teal/10 border border-coral/20">
+                                    <h3 className="text-sm font-bold text-coral mb-3 uppercase flex items-center gap-2">
                                         <Sparkles className="h-4 w-4" />
                                         Gemini Insight
                                     </h3>

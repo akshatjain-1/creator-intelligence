@@ -3,9 +3,6 @@
 /**
  * Conversion Funnel — Visualizes: Impressions → CTR → Views → Avg View Duration
  * PRD Req 2.3
- *
- * Bars are proportional to actual data values.
- * Shows conversion rates between each step.
  */
 
 interface FunnelProps {
@@ -29,10 +26,17 @@ function formatDuration(seconds: number): string {
     return `${mins}:${secs.toString().padStart(2, "0")}`
 }
 
+const FUNNEL_COLORS = [
+    { bar: "#FF6B6B", bg: "rgba(255, 107, 107, 0.08)" },
+    { bar: "#FFD93D", bg: "rgba(255, 217, 61, 0.08)" },
+    { bar: "#4ECDC4", bg: "rgba(78, 205, 196, 0.08)" },
+    { bar: "#FF6B6B", bg: "rgba(255, 107, 107, 0.08)" },
+]
+
 export function ConversionFunnel({ data }: FunnelProps) {
     if (!data) {
         return (
-            <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-6">
+            <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm p-6">
                 <h3 className="text-lg font-semibold mb-4">Conversion Funnel</h3>
                 <p className="text-muted-foreground text-sm">
                     Sync your channel data to see the funnel.
@@ -41,59 +45,31 @@ export function ConversionFunnel({ data }: FunnelProps) {
         )
     }
 
-    // Build funnel steps with actual conversion percentages
     const steps = [
-        {
-            label: "Impressions",
-            value: data.impressions,
-            display: formatNumber(data.impressions || 0),
-            color: "#a78bfa",
-        },
-        {
-            label: "Click-Through",
-            value: data.ctr,
-            display: `${data.ctr || 0}%`,
-            color: "#8b5cf6",
-        },
-        {
-            label: "Views",
-            value: data.views,
-            display: formatNumber(data.views || 0),
-            color: "#7c3aed",
-        },
-        {
-            label: "Avg Watch Time",
-            value: data.avg_view_duration,
-            display: formatDuration(data.avg_view_duration || 0),
-            color: "#6d28d9",
-        },
+        { label: "Impressions", value: data.impressions, display: formatNumber(data.impressions || 0) },
+        { label: "Click-Through", value: data.ctr, display: `${data.ctr || 0}%` },
+        { label: "Views", value: data.views, display: formatNumber(data.views || 0) },
+        { label: "Avg Watch Time", value: data.avg_view_duration, display: formatDuration(data.avg_view_duration || 0) },
     ]
 
-    // Compute real conversion rates between stages
     const conversionRate =
         data.impressions > 0
             ? ((data.views / data.impressions) * 100).toFixed(1)
             : null
 
-    // For bar widths: use the actual proportional relationship
-    // Impressions is the widest (100%), then proportional
-    const maxImpOrViews = Math.max(data.impressions, data.views, 1)
-
     const barWidths = [
-        data.impressions > 0 ? 100 : 10, // Impressions
-        Math.max(data.ctr, 5), // CTR as a % (min 5% width for visibility)
+        data.impressions > 0 ? 100 : 10,
+        Math.max(data.ctr, 5),
         data.impressions > 0
             ? Math.max((data.views / data.impressions) * 100, 5)
-            : data.views > 0
-                ? 80
-                : 10, // Views relative to impressions
-        data.avg_view_duration > 0 ? Math.max(40, Math.min(70, data.avg_view_duration / 3)) : 10, // Duration
+            : data.views > 0 ? 80 : 10,
+        data.avg_view_duration > 0 ? Math.max(40, Math.min(70, data.avg_view_duration / 3)) : 10,
     ]
 
     const hasAnalytics = data.impressions > 0 || data.ctr > 0
 
     return (
-        <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-6">
+        <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm p-6">
             <h3 className="text-lg font-semibold mb-1">Conversion Funnel</h3>
             <p className="text-xs text-muted-foreground mb-5">
                 {hasAnalytics
@@ -106,28 +82,30 @@ export function ConversionFunnel({ data }: FunnelProps) {
                 {steps.map((step, i) => (
                     <div key={step.label}>
                         <div className="flex items-center justify-between text-sm mb-1">
-                            <span className="text-muted-foreground text-xs">
+                            <span className="text-muted-foreground text-xs font-medium">
                                 {step.label}
                             </span>
-                            <span className="font-semibold text-foreground text-sm tabular-nums">
+                            <span className="font-bold text-foreground text-sm tabular-nums">
                                 {step.display}
                             </span>
                         </div>
-                        <div className="h-7 bg-muted/20 rounded-md overflow-hidden">
+                        <div
+                            className="h-8 rounded-lg overflow-hidden"
+                            style={{ backgroundColor: FUNNEL_COLORS[i].bg }}
+                        >
                             <div
-                                className="h-full rounded-md transition-all duration-700 ease-out flex items-center"
+                                className="h-full rounded-lg transition-all duration-700 ease-out"
                                 style={{
                                     width: `${barWidths[i]}%`,
-                                    backgroundColor: step.color,
-                                    opacity: step.value > 0 ? 1 : 0.25,
+                                    backgroundColor: FUNNEL_COLORS[i].bar,
+                                    opacity: step.value > 0 ? 0.85 : 0.2,
                                 }}
                             />
                         </div>
 
-                        {/* Show conversion arrow between Impressions and Views */}
                         {i === 0 && conversionRate && (
-                            <div className="flex items-center justify-center my-1">
-                                <span className="text-[10px] text-muted-foreground/60">
+                            <div className="flex items-center justify-center my-1.5">
+                                <span className="text-[10px] text-amber font-medium">
                                     ↓ {conversionRate}% converted to views
                                 </span>
                             </div>

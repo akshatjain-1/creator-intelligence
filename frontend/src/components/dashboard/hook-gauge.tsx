@@ -1,8 +1,8 @@
 "use client"
 
 /**
- * Hook Score Gauge — Enhanced radial gauge with color zones.
- * Standalone card version for the dashboard.
+ * Hook Score Gauge — Radial gauge with warm color zones.
+ * Standalone card version for the dashboard + inline for table rows.
  */
 
 import {
@@ -20,32 +20,32 @@ interface HookGaugeCardProps {
 export function HookGaugeCard({ score, label = "Avg Hook Score" }: HookGaugeCardProps) {
     const data = [{ value: score ?? 0 }]
 
-    let fill = "#6b7280" // gray for null
+    let fill = "#6b7280"
     let zone = "No Data"
     let zoneColor = "text-muted-foreground"
 
     if (score !== null) {
         if (score >= 70) {
-            fill = "#10b981"
+            fill = "#4ECDC4"
             zone = "Excellent"
-            zoneColor = "text-emerald-400"
+            zoneColor = "text-teal"
         } else if (score >= 50) {
-            fill = "#22d3ee"
+            fill = "#FFD93D"
             zone = "Good"
-            zoneColor = "text-cyan-400"
+            zoneColor = "text-amber"
         } else if (score >= 35) {
-            fill = "#f59e0b"
+            fill = "#FF6B6B"
             zone = "Needs Work"
-            zoneColor = "text-amber-400"
+            zoneColor = "text-coral"
         } else {
-            fill = "#ef4444"
+            fill = "#FF4757"
             zone = "Critical"
-            zoneColor = "text-red-400"
+            zoneColor = "text-destructive"
         }
     }
 
     return (
-        <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-6 flex flex-col items-center">
+        <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm p-6 flex flex-col items-center">
             <h3 className="text-lg font-semibold mb-2">{label}</h3>
 
             <div className="h-[160px] w-[160px] relative">
@@ -86,19 +86,19 @@ export function HookGaugeCard({ score, label = "Avg Hook Score" }: HookGaugeCard
             {/* Zone legend */}
             <div className="flex gap-3 mt-4 text-[10px] text-muted-foreground">
                 <div className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-red-500" />
+                    <span className="w-2 h-2 rounded-full" style={{ background: "#FF4757" }} />
                     &lt;35
                 </div>
                 <div className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                    <span className="w-2 h-2 rounded-full" style={{ background: "#FF6B6B" }} />
                     35-50
                 </div>
                 <div className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                    <span className="w-2 h-2 rounded-full" style={{ background: "#FFD93D" }} />
                     50-70
                 </div>
                 <div className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span className="w-2 h-2 rounded-full" style={{ background: "#4ECDC4" }} />
                     70+
                 </div>
             </div>
@@ -118,9 +118,9 @@ export function HookGauge({ score }: HookGaugeProps) {
 
     const data = [{ value: score }]
 
-    let fill = "#ef4444" // red
-    if (score >= 60) fill = "#10b981" // green
-    else if (score >= 40) fill = "#f59e0b" // yellow
+    let fill = "#FF4757"
+    if (score >= 60) fill = "#4ECDC4"
+    else if (score >= 40) fill = "#FFD93D"
 
     return (
         <div className="h-[60px] w-[60px] relative">
@@ -135,7 +135,7 @@ export function HookGauge({ score }: HookGaugeProps) {
                 >
                     <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
                     <RadialBar
-                        background={{ fill: "#334155" }}
+                        background={{ fill: "hsl(var(--muted))" }}
                         dataKey="value"
                         cornerRadius={30}
                         fill={fill}

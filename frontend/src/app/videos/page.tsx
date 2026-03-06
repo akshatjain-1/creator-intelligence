@@ -73,13 +73,13 @@ function timeAgo(isoDate: string | null): string {
 
 function getBadge(video: Video): { label: string; color: string } | null {
     if (video.velocity !== null && video.velocity > 2) {
-        return { label: "🔥 Trending", color: "bg-orange-500/20 text-orange-400" }
+        return { label: "🔥 Trending", color: "bg-amber/20 text-amber" }
     }
     if (video.hook_score !== null && video.hook_score >= 70) {
-        return { label: "⭐ Top Hook", color: "bg-emerald-500/20 text-emerald-400" }
+        return { label: "⭐ Top Hook", color: "bg-teal/20 text-teal" }
     }
     if (video.hook_score !== null && video.hook_score < 35) {
-        return { label: "⚠ Low Hook", color: "bg-red-500/20 text-red-400" }
+        return { label: "⚠ Low Hook", color: "bg-coral/20 text-coral" }
     }
     return null
 }
@@ -212,7 +212,7 @@ export default function VideosPage() {
                         onChange={(e) => setSearch(e.target.value)}
                         className="w-full pl-10 pr-4 py-2 rounded-lg bg-card border border-border/50 text-sm
                                    placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2
-                                   focus:ring-violet-500/40 transition-all"
+                                   focus:ring-coral/40 transition-all"
                     />
                     {search && (
                         <button
@@ -239,7 +239,7 @@ export default function VideosPage() {
                             className={cn(
                                 "px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
                                 hookFilter === opt.value
-                                    ? "bg-violet-500/20 text-violet-300"
+                                    ? "bg-coral/20 text-coral"
                                     : "text-muted-foreground hover:text-foreground"
                             )}
                         >
@@ -262,7 +262,7 @@ export default function VideosPage() {
                             className={cn(
                                 "flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
                                 sortField === opt.field
-                                    ? "bg-violet-500/20 text-violet-300"
+                                    ? "bg-coral/20 text-coral"
                                     : "text-muted-foreground hover:text-foreground"
                             )}
                         >
@@ -282,7 +282,7 @@ export default function VideosPage() {
                         onClick={() => setViewMode("grid")}
                         className={cn(
                             "p-1.5 rounded-md transition-colors",
-                            viewMode === "grid" ? "bg-violet-500/20 text-violet-300" : "text-muted-foreground hover:text-foreground"
+                            viewMode === "grid" ? "bg-coral/20 text-coral" : "text-muted-foreground hover:text-foreground"
                         )}
                     >
                         <LayoutGrid className="h-4 w-4" />
@@ -291,7 +291,7 @@ export default function VideosPage() {
                         onClick={() => setViewMode("list")}
                         className={cn(
                             "p-1.5 rounded-md transition-colors",
-                            viewMode === "list" ? "bg-violet-500/20 text-violet-300" : "text-muted-foreground hover:text-foreground"
+                            viewMode === "list" ? "bg-coral/20 text-coral" : "text-muted-foreground hover:text-foreground"
                         )}
                     >
                         <LayoutList className="h-4 w-4" />
@@ -321,7 +321,7 @@ export default function VideosPage() {
                             <div
                                 key={video.id}
                                 className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm
-                                           overflow-hidden hover:border-violet-500/30 transition-all group"
+                                           overflow-hidden hover:border-coral/30 transition-all group"
                             >
                                 {/* Thumbnail */}
                                 <div className="relative aspect-video bg-muted">
@@ -366,7 +366,7 @@ export default function VideosPage() {
                                         {video.velocity !== null && (
                                             <span className={cn(
                                                 "flex items-center gap-0.5 font-medium",
-                                                video.velocity >= 1 ? "text-emerald-400" : "text-muted-foreground"
+                                                video.velocity >= 1 ? "text-teal" : "text-muted-foreground"
                                             )}>
                                                 <Zap className="h-3 w-3" />
                                                 {video.velocity.toFixed(2)}x
@@ -381,7 +381,7 @@ export default function VideosPage() {
                                             {video.hook_delta !== null && (
                                                 <span className={cn(
                                                     "text-[10px] font-bold",
-                                                    video.hook_delta >= 0 ? "text-emerald-400" : "text-red-400"
+                                                    video.hook_delta >= 0 ? "text-teal" : "text-coral"
                                                 )}>
                                                     {video.hook_delta >= 0 ? "+" : ""}{video.hook_delta.toFixed(1)}%
                                                 </span>
@@ -389,8 +389,8 @@ export default function VideosPage() {
                                         </div>
                                         <button
                                             onClick={() => handleAnalyze(video)}
-                                            className="flex items-center gap-1 bg-violet-500/10 hover:bg-violet-500/20
-                                                       text-violet-400 px-3 py-1.5 rounded-md text-xs font-medium
+                                            className="flex items-center gap-1 bg-coral/10 hover:bg-coral/20
+                                                       text-coral px-3 py-1.5 rounded-md text-xs font-medium
                                                        transition-colors"
                                         >
                                             <Play className="h-3 w-3 fill-current" />
@@ -481,8 +481,8 @@ export default function VideosPage() {
                                         <td className="px-5 py-3.5 text-right">
                                             <button
                                                 onClick={() => handleAnalyze(video)}
-                                                className="inline-flex items-center gap-1 bg-violet-500/10 hover:bg-violet-500/20
-                                                           text-violet-400 px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+                                                className="inline-flex items-center gap-1 bg-coral/10 hover:bg-coral/20
+                                                           text-coral px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
                                             >
                                                 <Play className="h-3 w-3 fill-current" />
                                                 Analyze
